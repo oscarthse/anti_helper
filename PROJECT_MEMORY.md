@@ -6,7 +6,7 @@
 
 **Current Phase:** Phase 5: Infrastructure & Frontend (The Face)
 
-**Last Updated:** 2025-12-07T20:50:00+01:00
+**Last Updated:** 2025-12-07T21:20:00+01:00
 
 **Architecture:** Brain-Body-Face
 
@@ -83,6 +83,8 @@
   - `LiveStream` (SSE integration)
   - `TaskPlan` (Visual progress tracking)
 - [x] **Type Sync:** Automated Pydantic → TypeScript schema generation
+- [x] **Testing:** Jest unit tests for components (45 tests passing)
+- [x] **CI/CD:** GitHub Actions pipeline configured and passing (Unit + Integration)
 
 ### 4.2 📋 Pending Tasks
 
@@ -217,3 +219,7 @@ dramatiq backend.app.workers --processes 2
 - ✅ Worker pipeline: Plan → Code → Test → Fix → Docs → COMPLETED
 - ✅ Alembic migrations setup & initial migration
 - ✅ All tests passing (96+ total)
+
+**Infrastructure:**
+- ✅ **CI/CD:** `ci.yml` pipeline operational (Fixed `psycopg2` dependency, venv installation)
+- ✅ **Makefile:** Standardized development commands (`make dev`, `make test-all`)
