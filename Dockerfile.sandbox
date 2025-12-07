@@ -1,0 +1,29 @@
+FROM python:3.11-slim
+
+# Minimal sandbox environment for isolated code execution
+# This container has NO network access and limited resources
+
+WORKDIR /sandbox
+
+# Install common development tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  git \
+  curl \
+  jq \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install common Python packages for testing
+RUN pip install --no-cache-dir \
+  pytest \
+  black \
+  ruff \
+  mypy
+
+# Create non-root user for security
+RUN useradd -m -s /bin/bash sandbox
+USER sandbox
+
+# Working directory for project code
+WORKDIR /sandbox/project
+
+CMD ["/bin/bash"]

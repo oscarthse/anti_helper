@@ -1,0 +1,69 @@
+"""
+Antigravity Dev - FastAPI Application
+
+The main API entry point. Handles all I/O, manages the Database,
+and dispatches heavy tasks to the workers.
+"""
+
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
+import structlog
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from backend.app.api import tasks, repos, streaming
+from backend.app.db.session import init_db
+
+logger = structlog.get_logger()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Application lifespan handler."""
+    logger.info("application_starting")
+
+    # Initialize database
+    await init_db()
+
+    yield
+
+    logger.info("application_shutting_down")
+
+
+app = FastAPI(
+    title="Antigravity Dev API",
+    description="A repo-aware, sandboxed, multi-agent AI development platform",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
+app.include_router(repos.router, prefix="/api/repos", tags=["repos"])
+app.include_router(streaming.router, prefix="/api/stream", tags=["streaming"])
+
+
+@app.get("/")
+async def root():
+    """Root endpoint - health check."""
+    return {
+        "name": "Antigravity Dev API",
+        "version": "0.1.0",
+        "status": "healthy",
+    }
+
+
+@app.get("/health")
+async def health():
+    """Health check endpoint."""
+    return {"status": "ok"}
