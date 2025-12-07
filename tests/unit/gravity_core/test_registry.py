@@ -7,15 +7,8 @@ Tests the tool registration, dispatch, and OpenAI-compatible schema generation.
 import asyncio
 
 # Add project paths
-import sys
-from pathlib import Path
-
+# Add project paths
 import pytest
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "libs"))
-
 from gravity_core.tools.registry import tool
 
 

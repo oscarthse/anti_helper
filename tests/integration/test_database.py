@@ -6,15 +6,13 @@ and ORM operations.
 """
 
 # Add project paths
-import sys
+# Add project paths
 from datetime import datetime
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+from backend.app.db.models import AgentLog, Repository, Task, TaskStatus
 
 
 class TestDatabaseSession:
@@ -29,7 +27,6 @@ class TestDatabaseSession:
     @pytest.mark.asyncio
     async def test_session_rollback_on_error(self, db_session):
         """Test that session rolls back on error."""
-        from backend.app.db.models import Repository
 
         # Create a repository
         repo = Repository(
@@ -54,7 +51,6 @@ class TestRepositoryModel:
     @pytest.mark.asyncio
     async def test_create_repository(self, db_session, sample_repository_data):
         """Test creating a repository."""
-        from backend.app.db.models import Repository
 
         repo = Repository(**sample_repository_data)
         db_session.add(repo)
@@ -67,7 +63,6 @@ class TestRepositoryModel:
     @pytest.mark.asyncio
     async def test_repository_timestamps(self, db_session):
         """Test that timestamps are set correctly."""
-        from backend.app.db.models import Repository
 
         before = datetime.utcnow()
 
@@ -93,7 +88,6 @@ class TestTaskModel:
     @pytest.mark.asyncio
     async def test_create_task(self, db_session, sample_repository_data, sample_task_data):
         """Test creating a task with a repository."""
-        from backend.app.db.models import Repository, Task, TaskStatus
 
         # Create repository first
         repo = Repository(**sample_repository_data)
@@ -122,7 +116,6 @@ class TestTaskModel:
     @pytest.mark.asyncio
     async def test_task_status_transitions(self, db_session, sample_repository_data):
         """Test that task status can be updated."""
-        from backend.app.db.models import Repository, Task, TaskStatus
 
         repo = Repository(**sample_repository_data)
         db_session.add(repo)
@@ -163,7 +156,6 @@ class TestAgentLogModel:
     @pytest.mark.asyncio
     async def test_create_agent_log(self, db_session, sample_repository_data):
         """Test creating an agent log entry."""
-        from backend.app.db.models import AgentLog, Repository, Task, TaskStatus
 
         # Create repository and task
         repo = Repository(**sample_repository_data)
@@ -206,7 +198,6 @@ class TestAgentLogModel:
     @pytest.mark.asyncio
     async def test_agent_log_with_tool_calls(self, db_session, sample_repository_data):
         """Test agent log with tool calls JSON."""
-        from backend.app.db.models import AgentLog, Repository, Task, TaskStatus
 
         repo = Repository(**sample_repository_data)
         db_session.add(repo)
@@ -267,7 +258,6 @@ class TestDatabaseConstraints:
         """Test that task requires existing repository."""
         from sqlalchemy.exc import IntegrityError
 
-        from backend.app.db.models import Task, TaskStatus
 
         task = Task(
             id=uuid4(),

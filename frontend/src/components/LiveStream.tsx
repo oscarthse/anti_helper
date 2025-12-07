@@ -127,14 +127,8 @@ export function LiveStream({ taskId, className = '', onError }: LiveStreamProps)
       {logs.map((log) => (
         <AgentCard
           key={log.id}
-          output={{
-            ui_title: log.ui_title,
-            ui_subtitle: log.ui_subtitle,
-            technical_reasoning: log.technical_reasoning,
-            tool_calls: (log.tool_calls || []) as any,
-            confidence_score: log.confidence_score,
-            agent_persona: log.agent_persona as any,
-          }}
+          log={log}
+          isLatest={logs[logs.length - 1].id === log.id}
         />
       ))}
     </div>

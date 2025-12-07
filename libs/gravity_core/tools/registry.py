@@ -6,12 +6,13 @@ Tools are registered with their schemas for LLM function calling.
 """
 
 import asyncio
+import inspect
 import time
 from collections.abc import Callable
 from typing import Any
 
-import inspect
 import structlog
+
 from gravity_core.schema import ToolCall
 
 logger = structlog.get_logger()

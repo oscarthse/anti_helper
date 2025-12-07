@@ -126,8 +126,7 @@ async def run_shell_command(
         # Wait for completion with timeout
         try:
             exit_code = container.wait(timeout=timeout_seconds)["StatusCode"]
-            logs = container.logs().decode("utf-8", errors="replace")
-
+            # logs = container.logs().decode("utf-8", errors="replace")
             # Get stdout/stderr separately
             stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
             stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")

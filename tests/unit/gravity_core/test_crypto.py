@@ -7,15 +7,10 @@ Tests encrypt_secret/decrypt_secret round-trip integrity.
 import os
 
 # Add project paths
-import sys
-from pathlib import Path
+# Add project paths
 from unittest.mock import patch
 
 import pytest
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "libs"))
 
 
 class TestCryptoRoundTrip:

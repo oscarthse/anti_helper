@@ -6,9 +6,7 @@ Each agent must implement the execute method and produce
 structured output conforming to the Explainability Contract.
 """
 
-import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
@@ -23,7 +21,8 @@ from gravity_core.schema import (
 logger = structlog.get_logger()
 
 
-from gravity_core.tools.registry import ToolRegistry, tool
+from gravity_core.tools.registry import ToolRegistry
+
 
 class BaseAgent(ABC):
     """

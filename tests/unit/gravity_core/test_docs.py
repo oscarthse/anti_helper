@@ -8,16 +8,10 @@ Tests documentation generation including:
 - LLM tool-call handling
 """
 
-import sys
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "libs"))
 
 
 class TestDocsAgentExecution:
@@ -93,7 +87,9 @@ class TestDocsAgentExecution:
         assert output.confidence_score >= 0.75
 
     @pytest.mark.asyncio
-    async def test_generates_multiple_doc_updates(self, docs_agent, mock_llm_client, mock_changeset):
+    async def test_generates_multiple_doc_updates(
+        self, docs_agent, mock_llm_client, mock_changeset
+    ):
         """Test that DocsAgent can generate multiple documentation updates."""
         # Configure LLM to return multiple tool calls
         mock_llm_client.generate_with_tools.return_value = {
@@ -130,7 +126,7 @@ class TestDocsAgentExecution:
             "plan_summary": "Major feature addition",
         }
 
-        output = await docs_agent.execute(uuid4(), context)
+        await docs_agent.execute(uuid4(), context)
 
         # Verify both updates are in the output
         doc_changes = docs_agent.get_doc_changes()
@@ -181,7 +177,11 @@ class TestDocsAgentExecution:
                     "arguments": {
                         "file_path": "libs/gravity_core/utils/helper.py",
                         "symbol_name": "calculate_metrics",
-                        "docstring": "Calculate metrics for the given data.\n\nArgs:\n    data: Input data dict\n\nReturns:\n    Computed metrics",
+                        "docstring": (
+                            "Calculate metrics for the given data.\n\n"
+                            "Args:\n    data: Input data dict\n\n"
+                            "Returns:\n    Computed metrics"
+                        ),
                     },
                 },
             ],
@@ -204,7 +204,7 @@ class TestDocsAgentExecution:
             ],
         }
 
-        output = await docs_agent.execute(uuid4(), context)
+        await docs_agent.execute(uuid4(), context)
 
         # Should have docstring update in tool calls
         assert len(docs_agent._tool_calls_made) >= 1
@@ -245,7 +245,12 @@ class TestDocsAgentPromptBuilding:
         """Test that prompt limits number of changes to prevent token overflow."""
         # Create 15 changes
         changes = [
-            {"file_path": f"file_{i}.py", "action": "modify", "diff": f"+line {i}", "explanation": f"Change {i}"}
+            {
+                "file_path": f"file_{i}.py",
+                "action": "modify",
+                "diff": f"+line {i}",
+                "explanation": f"Change {i}",
+            }
             for i in range(15)
         ]
 

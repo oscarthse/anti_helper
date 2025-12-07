@@ -6,16 +6,10 @@ retry logic, and error handling.
 """
 
 # Add project paths
-import sys
-from pathlib import Path
+# Add project paths
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "libs"))
-
 from gravity_core.llm.client import (
     LLMClient,
     LLMClientError,
@@ -267,7 +261,7 @@ class TestRetryLogic:
     @pytest.mark.asyncio
     async def test_retry_on_rate_limit(self):
         """Test that rate limit errors trigger retry."""
-        with patch("gravity_core.llm.client.AsyncOpenAI") as mock_openai:
+        with patch("gravity_core.llm.client.AsyncOpenAI"):
             # Setup client
             client = LLMClient(openai_api_key="sk-test")
 

@@ -9,17 +9,11 @@ Tests the planning algorithm including:
 """
 
 # Add project paths
-import sys
-from pathlib import Path
+# Add project paths
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "libs"))
-
 from gravity_core.agents.planner import PlannerAgent
 from gravity_core.llm import LLMClient, LLMValidationError
 from gravity_core.schema import AgentOutput, AgentPersona, TaskPlan, TaskStep

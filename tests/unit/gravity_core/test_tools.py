@@ -8,15 +8,16 @@ and edge cases.
 import os
 
 # Add project paths
-import sys
+# Add project paths
 import tempfile
 from pathlib import Path
 
 import pytest
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "libs"))
+from gravity_core.tools.knowledge import check_dependency_version
+from gravity_core.tools.manipulation import create_new_module, edit_file_snippet
+from gravity_core.tools.perception import get_file_signatures, scan_repo_structure, search_codebase
+from gravity_core.tools.runtime import run_shell_command
+from gravity_core.tools.version_control import git_diff_staged
 
 
 class TestPerceptionTools:
@@ -55,7 +56,7 @@ def standalone_function():
     @pytest.mark.asyncio
     async def test_scan_repo_structure(self, temp_repo):
         """Test scanning repository structure."""
-        from gravity_core.tools.perception import scan_repo_structure
+
 
         result = await scan_repo_structure(str(temp_repo))
 
@@ -70,7 +71,7 @@ def standalone_function():
     @pytest.mark.asyncio
     async def test_scan_repo_structure_with_depth(self, temp_repo):
         """Test scanning with depth limit."""
-        from gravity_core.tools.perception import scan_repo_structure
+
 
         result = await scan_repo_structure(str(temp_repo), max_depth=1)
 
@@ -80,7 +81,7 @@ def standalone_function():
     @pytest.mark.asyncio
     async def test_scan_repo_structure_nonexistent(self):
         """Test scanning nonexistent directory."""
-        from gravity_core.tools.perception import scan_repo_structure
+
 
         result = await scan_repo_structure("/nonexistent/path/to/repo")
 
@@ -89,19 +90,21 @@ def standalone_function():
     @pytest.mark.asyncio
     async def test_search_codebase(self, temp_repo):
         """Test searching codebase for patterns."""
-        from gravity_core.tools.perception import search_codebase
+
 
         result = await search_codebase(str(temp_repo), "MyClass")
 
         # Check matches list
         assert len(result["matches"]) > 0
         file_paths = [m["file"] for m in result["matches"]]
-        assert "src/main.py" in file_paths or "src/main.py" in [f.replace("\\", "/") for f in file_paths]
+        assert "src/main.py" in file_paths or "src/main.py" in [
+            f.replace("\\", "/") for f in file_paths
+        ]
 
     @pytest.mark.asyncio
     async def test_search_codebase_no_matches(self, temp_repo):
         """Test searching with no matches."""
-        from gravity_core.tools.perception import search_codebase
+
 
         result = await search_codebase(str(temp_repo), "NonexistentPattern12345")
 
@@ -110,7 +113,7 @@ def standalone_function():
     @pytest.mark.asyncio
     async def test_get_file_signatures(self, temp_repo):
         """Test extracting file signatures."""
-        from gravity_core.tools.perception import get_file_signatures
+
 
         result = await get_file_signatures(str(temp_repo / "src" / "main.py"))
 
@@ -123,7 +126,7 @@ def standalone_function():
     @pytest.mark.asyncio
     async def test_get_file_signatures_nonexistent(self):
         """Test extracting signatures from nonexistent file."""
-        from gravity_core.tools.perception import get_file_signatures
+
 
         result = await get_file_signatures("/nonexistent/file.py")
 
@@ -154,7 +157,7 @@ def greet(name):
     @pytest.mark.asyncio
     async def test_edit_file_snippet_success(self, temp_file):
         """Test successful file snippet editing."""
-        from gravity_core.tools.manipulation import edit_file_snippet
+
 
         result = await edit_file_snippet(
             temp_file,
@@ -170,7 +173,7 @@ def greet(name):
     @pytest.mark.asyncio
     async def test_edit_file_snippet_not_found(self, temp_file):
         """Test editing with content not in file."""
-        from gravity_core.tools.manipulation import edit_file_snippet
+
 
         result = await edit_file_snippet(
             temp_file,
@@ -190,7 +193,7 @@ return True
 return True
 return True
 """)
-        from gravity_core.tools.manipulation import edit_file_snippet
+
 
         # Replace first occurrence (default)
         result = await edit_file_snippet(
@@ -209,7 +212,7 @@ return True
     @pytest.mark.asyncio
     async def test_edit_file_nonexistent(self):
         """Test editing nonexistent file."""
-        from gravity_core.tools.manipulation import edit_file_snippet
+
 
         result = await edit_file_snippet(
             "/nonexistent/file.py",
@@ -223,7 +226,7 @@ return True
     @pytest.mark.asyncio
     async def test_create_new_module(self):
         """Test creating a new module."""
-        from gravity_core.tools.manipulation import create_new_module
+
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create dummy pyproject.toml to stop recursion
@@ -250,7 +253,7 @@ class TestRuntimeTools:
     @pytest.mark.asyncio
     async def test_run_shell_command_success(self):
         """Test running a simple shell command."""
-        from gravity_core.tools.runtime import run_shell_command
+
 
         result = await run_shell_command("echo 'Hello, World!'")
 
@@ -260,7 +263,7 @@ class TestRuntimeTools:
     @pytest.mark.asyncio
     async def test_run_shell_command_failure(self):
         """Test running a command that fails."""
-        from gravity_core.tools.runtime import run_shell_command
+
 
         result = await run_shell_command("exit 1")
 
@@ -271,7 +274,7 @@ class TestRuntimeTools:
     @pytest.mark.asyncio
     async def test_run_shell_command_blocked_dangerous(self):
         """Test that dangerous commands are blocked."""
-        from gravity_core.tools.runtime import run_shell_command
+
 
         # Try to run rm -rf (should be blocked)
         result = await run_shell_command("rm -rf /")
@@ -282,7 +285,7 @@ class TestRuntimeTools:
     @pytest.mark.asyncio
     async def test_run_shell_command_timeout(self):
         """Test command timeout handling."""
-        from gravity_core.tools.runtime import run_shell_command
+
 
         # This test runs "echo 'quick'" with timeout 1s.
         # It should succeed fast enough.
@@ -294,7 +297,7 @@ class TestRuntimeTools:
     @pytest.mark.asyncio
     async def test_read_file_outside_repo_blocked(self):
         """Test that reading files outside repo is blocked."""
-        from gravity_core.tools.runtime import run_shell_command
+
 
         # Attempt to read /etc/passwd
         result = await run_shell_command("cat /etc/passwd")
@@ -309,7 +312,7 @@ class TestKnowledgeTools:
     @pytest.mark.asyncio
     async def test_check_dependency_version_installed(self):
         """Test checking version of installed package."""
-        from gravity_core.tools.knowledge import check_dependency_version
+
 
         result = await check_dependency_version("pydantic")
 
@@ -321,7 +324,7 @@ class TestKnowledgeTools:
     @pytest.mark.asyncio
     async def test_check_dependency_version_not_installed(self):
         """Test checking version of package not installed."""
-        from gravity_core.tools.knowledge import check_dependency_version
+
 
         result = await check_dependency_version("nonexistent-package-12345")
 
@@ -367,7 +370,7 @@ class TestVersionControlTools:
     @pytest.mark.asyncio
     async def test_git_diff_staged_no_changes(self, temp_git_repo):
         """Test git diff when no changes are staged."""
-        from gravity_core.tools.version_control import git_diff_staged
+
 
         result = await git_diff_staged(str(temp_git_repo))
 
@@ -380,7 +383,7 @@ class TestVersionControlTools:
         """Test git diff with staged changes."""
         import subprocess
 
-        from gravity_core.tools.version_control import git_diff_staged
+
 
         # Make and stage a change
         (temp_git_repo / "new_file.py").write_text("print('hello')")

@@ -6,17 +6,14 @@ verifying request/response handling and state changes.
 """
 
 # Add project paths
-import sys
+# Add project paths
 from datetime import datetime
-from pathlib import Path
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.app.db.session import get_session
 from backend.app.main import app
@@ -110,6 +107,14 @@ class TestRepositoryEndpoints:
 class TestTaskEndpoints:
     """Tests for task management endpoints."""
 
+    @pytest.fixture(autouse=True)
+    def mock_broker(self):
+        """Mock Dramatiq broker/actor for all tests in this class."""
+        # Patching run_task.send where it is defined
+        with patch("backend.app.workers.agent_runner.run_task.send") as mock_run, \
+             patch("backend.app.workers.agent_runner.resume_task.send") as mock_resume:
+            yield {"run": mock_run, "resume": mock_resume}
+
     @pytest.fixture
     def mock_db_session(self, db_session, mocker):
         """Override the database session for testing."""
@@ -193,6 +198,13 @@ class TestTaskEndpoints:
 class TestTaskWithRepository:
     """Tests for task operations with existing repository."""
 
+    @pytest.fixture(autouse=True)
+    def mock_broker(self):
+        """Mock Dramatiq broker for all tests in this class."""
+        with patch("backend.app.workers.agent_runner.run_task.send") as mock_run, \
+             patch("backend.app.workers.agent_runner.resume_task.send") as mock_resume:
+            yield {"run": mock_run, "resume": mock_resume}
+
     @pytest_asyncio.fixture
     async def repo_with_task(self, db_session, mocker):
         """Create a repository and task for testing."""
@@ -248,11 +260,6 @@ class TestTaskWithRepository:
         data = response.json()
         assert data["id"] == str(task.id)
         assert data["status"] == "pending"
-
-    @pytest.mark.asyncio
-    async def test_execute_task(self, repo_with_task):
-        """Test triggering task execution."""
-        task = repo_with_task["task"]
 
         async with AsyncClient(
             transport=ASGITransport(app=app),

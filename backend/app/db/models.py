@@ -15,11 +15,11 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
+    Uuid,
 )
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -52,7 +52,7 @@ class Repository(Base):
     __tablename__ = "repositories"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
+        Uuid,
         primary_key=True,
         default=uuid4,
     )
@@ -95,14 +95,14 @@ class Task(Base):
     __tablename__ = "tasks"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
+        Uuid,
         primary_key=True,
         default=uuid4,
     )
 
     # Foreign keys
     repo_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
+        Uuid,
         ForeignKey("repositories.id"),
         nullable=False,
     )
@@ -121,7 +121,7 @@ class Task(Base):
     current_step: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Planning output
-    task_plan: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    task_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Error tracking
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -166,14 +166,14 @@ class AgentLog(Base):
     __tablename__ = "agent_logs"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
+        Uuid,
         primary_key=True,
         default=uuid4,
     )
 
     # Foreign keys
     task_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
+        Uuid,
         ForeignKey("tasks.id"),
         nullable=False,
     )
@@ -188,7 +188,7 @@ class AgentLog(Base):
 
     # Technical fields
     technical_reasoning: Mapped[str] = mapped_column(Text, nullable=False)
-    tool_calls: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    tool_calls: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     # Confidence and review
     confidence_score: Mapped[float] = mapped_column(
@@ -229,19 +229,19 @@ class ChangeSet(Base):
     __tablename__ = "changesets"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
+        Uuid,
         primary_key=True,
         default=uuid4,
     )
 
     # Foreign keys
     task_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
+        Uuid,
         ForeignKey("tasks.id"),
         nullable=False,
     )
     agent_log_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
+        Uuid,
         ForeignKey("agent_logs.id"),
         nullable=False,
     )
@@ -281,14 +281,14 @@ class RepositorySecret(Base):
     __tablename__ = "repository_secrets"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
+        Uuid,
         primary_key=True,
         default=uuid4,
     )
 
     # Foreign key to repository
     repo_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
+        Uuid,
         ForeignKey("repositories.id"),
         nullable=False,
     )
