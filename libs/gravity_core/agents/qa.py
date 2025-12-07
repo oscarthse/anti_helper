@@ -36,7 +36,7 @@ logger = structlog.get_logger(__name__)
 # =============================================================================
 
 
-QA_SYSTEM_PROMPT = """You are a **Senior Debugging Specialist** - the final quality gate before code ships.
+QA_SYSTEM_PROMPT = """You are a **Senior Debugging Specialist** - the final quality gate.
 
 ## Your Persona
 You think like Kent Beck debugging a test failure - methodical, precise, and minimal.
@@ -437,7 +437,10 @@ Focus on the actual error, not workarounds."""
         """Build output when tests fail but fix is suggested."""
         return self.build_output(
             ui_title="❌ Tests Failed → Fix Suggested",
-            ui_subtitle=f"Test `{failed_run.command}` failed. I've diagnosed the issue and generated a fix.",
+            ui_subtitle=(
+                f"Test `{failed_run.command}` failed. "
+                "I've diagnosed the issue and generated a fix."
+            ),
             technical_reasoning=json.dumps({
                 "status": "failed_with_fix",
                 "failed_command": failed_run.command,
@@ -459,7 +462,10 @@ Focus on the actual error, not workarounds."""
         """Build output when tests fail and no fix could be generated."""
         return self.build_output(
             ui_title="❌ Tests Failed → Manual Review Needed",
-            ui_subtitle=f"Test `{failed_run.command}` failed. Unable to automatically diagnose the root cause.",
+            ui_subtitle=(
+                f"Test `{failed_run.command}` failed. "
+                "Unable to automatically diagnose the root cause."
+            ),
             technical_reasoning=json.dumps({
                 "status": "failed_no_fix",
                 "failed_command": failed_run.command,

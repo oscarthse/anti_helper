@@ -154,7 +154,16 @@ def get_db_models_json_schema() -> dict:
                     "updated_at": {"type": "string", "format": "date-time"},
                     "completed_at": {"type": ["string", "null"], "format": "date-time"},
                 },
-                "required": ["id", "repo_id", "user_request", "status", "current_step", "retry_count", "created_at", "updated_at"],
+                "required": [
+                    "id",
+                    "repo_id",
+                    "user_request",
+                    "status",
+                    "current_step",
+                    "retry_count",
+                    "created_at",
+                    "updated_at",
+                ],
             },
             "AgentLog": {
                 "type": "object",
@@ -174,7 +183,18 @@ def get_db_models_json_schema() -> dict:
                     "created_at": {"type": "string", "format": "date-time"},
                     "duration_ms": {"type": ["integer", "null"]},
                 },
-                "required": ["id", "task_id", "agent_persona", "step_number", "ui_title", "ui_subtitle", "technical_reasoning", "confidence_score", "requires_review", "created_at"],
+                "required": [
+                    "id",
+                    "task_id",
+                    "agent_persona",
+                    "step_number",
+                    "ui_title",
+                    "ui_subtitle",
+                    "technical_reasoning",
+                    "confidence_score",
+                    "requires_review",
+                    "created_at",
+                ],
             },
             "ChangeSetDB": {
                 "type": "object",
@@ -194,7 +214,20 @@ def get_db_models_json_schema() -> dict:
                     "reverted": {"type": "boolean"},
                     "created_at": {"type": "string", "format": "date-time"},
                 },
-                "required": ["id", "task_id", "agent_log_id", "file_path", "action", "diff", "explanation", "lines_added", "lines_removed", "applied", "reverted", "created_at"],
+                "required": [
+                    "id",
+                    "task_id",
+                    "agent_log_id",
+                    "file_path",
+                    "action",
+                    "diff",
+                    "explanation",
+                    "lines_added",
+                    "lines_removed",
+                    "applied",
+                    "reverted",
+                    "created_at",
+                ],
             },
         }
     }
@@ -250,7 +283,10 @@ def json_type_to_ts(schema: dict) -> str:
             if t == "null":
                 types.append("null")
             else:
-                types.append(json_type_to_ts({"type": t, **{k: v for k, v in schema.items() if k != "type"}}))
+                types.append(json_type_to_ts({
+                    "type": t,
+                    **{k: v for k, v in schema.items() if k != "type"}
+                }))
         return " | ".join(types)
 
     type_map = {
@@ -300,16 +336,24 @@ def main() -> int:
     timestamp = datetime.now().isoformat()
     content = TS_HEADER.format(timestamp=timestamp)
 
-    content += "// =============================================================================\n"
+    content += (
+        "// =============================================================================\n"
+    )
     content += "// Agent & Tool Schemas (from libs/gravity_core/schema.py)\n"
-    content += "// =============================================================================\n\n"
+    content += (
+        "// =============================================================================\n\n"
+    )
 
     if gravity_schemas:
         content += json_schema_to_typescript(gravity_schemas)
 
-    content += "\n// =============================================================================\n"
+    content += (
+        "\n// =============================================================================\n"
+    )
     content += "// Database Entities (from backend/app/db/models.py)\n"
-    content += "// =============================================================================\n\n"
+    content += (
+        "// =============================================================================\n\n"
+    )
 
     if db_schemas:
         content += json_schema_to_typescript(db_schemas)

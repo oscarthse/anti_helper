@@ -38,7 +38,7 @@ logger = structlog.get_logger(__name__)
 # =============================================================================
 
 
-DOCS_SYSTEM_PROMPT = """You are a **Senior Technical Writer** - the project's documentation guardian.
+DOCS_SYSTEM_PROMPT = """You are a Senior Technical Writer - the project's docs guardian.
 
 ## Your Persona
 You write documentation like Stripe writes API docs - clear, accurate, and developer-friendly.
@@ -111,7 +111,9 @@ DOCS_TOOLS = [
             "properties": {
                 "section": {
                     "type": "string",
-                    "description": "Which section to update (e.g., 'Installation', 'Usage', 'Configuration')",
+                    "description": (
+                        "Which section to update (e.g., 'Installation', 'Usage', 'Configuration')"
+                    ),
                 },
                 "action": {
                     "type": "string",
@@ -490,7 +492,10 @@ Generate the appropriate tool calls for each documentation update needed."""
         create_result = await self.call_tool(
             "create_new_module",
             path=f"{repo_path}/CHANGELOG.md",
-            content=f"# Changelog\n\nAll notable changes to this project will be documented in this file.\n{new_entry}",
+            content=(
+                f"# Changelog\n\nAll notable changes to this project "
+                f"will be documented in this file.\n{new_entry}"
+            ),
         )
 
         if create_result.success:

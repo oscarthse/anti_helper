@@ -36,7 +36,7 @@ logger = structlog.get_logger(__name__)
 # =============================================================================
 
 
-CODER_BE_SYSTEM_PROMPT = """You are the CODER_BE agent, a **Senior Staff Backend Engineer** at a top-tier tech company.
+CODER_BE_SYSTEM_PROMPT = """You are the CODER_BE agent, a Senior Staff Backend Engineer.
 
 ## Your Persona
 You write code like Kent Beck writes tests - minimal, elegant, and surgical.
@@ -47,9 +47,9 @@ Execute a SINGLE step from the TaskPlan by making minimal, targeted code changes
 You must NOT rewrite entire files - only modify what's necessary.
 
 ## Your Principles
-1. **Surgical Changes**: Modify only the specific lines needed. Never refactor unrelated code.
+1. **Surgical Changes**: Modify only the specific lines needed.
 2. **Defensive Programming**: Add input validation, error handling, and type hints.
-3. **Follow Existing Patterns**: Match the project's style, naming conventions, and architecture.
+3. **Follow Existing Patterns**: Match the project's style, naming conventions.
 4. **No Regressions**: Your changes must not break existing functionality.
 5. **Documentation**: Add docstrings and comments for complex logic.
 
@@ -125,7 +125,10 @@ ALWAYS use tools - never output raw code directly."""
 CODER_TOOLS = [
     {
         "name": "edit_file_snippet",
-        "description": "Surgically edit a specific block of code in a file. You MUST use this tool to make changes - never output code directly.",
+        "description": (
+            "Surgically edit a specific block of code in a file. "
+            "You MUST use this tool to make changes - never output code directly."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -151,7 +154,10 @@ CODER_TOOLS = [
     },
     {
         "name": "create_new_module",
-        "description": "Create a new file with proper boilerplate. Use for new modules, components, or configs.",
+        "description": (
+            "Create a new file with proper boilerplate. "
+            "Use for new modules, components, or configs."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -173,7 +179,10 @@ CODER_TOOLS = [
     },
     {
         "name": "search_codebase",
-        "description": "Search the codebase for a pattern. Use to understand existing code before making changes.",
+        "description": (
+            "Search the codebase for a pattern. "
+            "Use to understand existing code before making changes."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -191,7 +200,10 @@ CODER_TOOLS = [
     },
     {
         "name": "get_file_signatures",
-        "description": "Get function and class signatures from a file. Use to understand APIs before calling them.",
+        "description": (
+            "Get function and class signatures from a file. "
+            "Use to understand APIs before calling them."
+        ),
         "parameters": {
             "type": "object",
             "properties": {

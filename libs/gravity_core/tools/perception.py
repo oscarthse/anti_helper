@@ -34,7 +34,9 @@ logger = structlog.get_logger()
             "exclude_patterns": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Patterns to exclude (e.g., ['.git', 'node_modules', '__pycache__'])",
+                "description": (
+                    "Patterns to exclude (e.g., ['.git', 'node_modules', '__pycache__'])"
+                ),
                 "default": [".git", "node_modules", "__pycache__", ".venv", "venv", ".pytest_cache"]
             }
         },
@@ -297,7 +299,11 @@ def _extract_class_signature(
         if isinstance(base, ast.Name):
             bases.append(base.id)
         elif isinstance(base, ast.Attribute):
-            bases.append(f"{base.value.id}.{base.attr}" if isinstance(base.value, ast.Name) else base.attr)
+            bases.append(
+                f"{base.value.id}.{base.attr}"
+                if isinstance(base.value, ast.Name)
+                else base.attr
+            )
 
     # Get method signatures
     methods = []

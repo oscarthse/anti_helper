@@ -302,7 +302,7 @@ class ProjectMap:
                         self.framework = "django"
                     elif "flask" in reqs:
                         self.framework = "flask"
-                except:
+                except Exception:
                     pass
 
         # Check for Node.js projects
@@ -321,7 +321,7 @@ class ProjectMap:
                     self.framework = "vue"
                 elif "express" in deps:
                     self.framework = "express"
-            except:
+            except Exception:
                 pass
 
     def get_summary(self) -> dict[str, Any]:

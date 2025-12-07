@@ -27,7 +27,9 @@ logger = structlog.get_logger()
             },
             "library": {
                 "type": "string",
-                "description": "Optional: Specific library to search docs for (e.g., 'fastapi', 'sqlalchemy')"
+                "description": (
+                    "Optional: Specific library to search docs for (e.g., 'fastapi', 'sqlalchemy')"
+                )
             },
             "max_results": {
                 "type": "integer",

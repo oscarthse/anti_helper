@@ -1,7 +1,7 @@
 """Initial database schema
 
 Revision ID: 5803305ba5cd
-Revises: 
+Revises:
 Create Date: 2025-12-07 19:00:59.061281
 
 """
@@ -36,9 +36,15 @@ def upgrade() -> None:
     op.create_table('repository_secrets',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('repo_id', sa.UUID(), nullable=False),
-    sa.Column('key_name', sa.String(length=255), nullable=False, comment="Environment variable name (e.g., 'STRIPE_API_KEY')"),
-    sa.Column('encrypted_value', sa.Text(), nullable=False, comment='Fernet-encrypted secret value'),
-    sa.Column('description', sa.Text(), nullable=True, comment='Optional description of what this secret is used for'),
+    sa.Column('key_name', sa.String(length=255), nullable=False, comment=(
+        "Environment variable name (e.g., 'STRIPE_API_KEY')"
+    )),
+    sa.Column('encrypted_value', sa.Text(), nullable=False, comment=(
+        'Fernet-encrypted secret value'
+    )),
+    sa.Column('description', sa.Text(), nullable=True, comment=(
+        'Optional description of what this secret is used for'
+    )),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['repo_id'], ['repositories.id'], ),
@@ -49,7 +55,11 @@ def upgrade() -> None:
     sa.Column('repo_id', sa.UUID(), nullable=False),
     sa.Column('user_request', sa.Text(), nullable=False),
     sa.Column('title', sa.String(length=255), nullable=True),
-    sa.Column('status', sa.Enum('PENDING', 'PLANNING', 'PLAN_REVIEW', 'EXECUTING', 'TESTING', 'DOCUMENTING', 'COMPLETED', 'FAILED', 'REVIEW_REQUIRED', name='taskstatus'), nullable=False),
+    sa.Column('status', sa.Enum(
+        'PENDING', 'PLANNING', 'PLAN_REVIEW', 'EXECUTING', 'TESTING',
+        'DOCUMENTING', 'COMPLETED', 'FAILED', 'REVIEW_REQUIRED',
+        name='taskstatus'
+    ), nullable=False),
     sa.Column('current_agent', sa.String(length=50), nullable=True),
     sa.Column('current_step', sa.Integer(), nullable=False),
     sa.Column('task_plan', postgresql.JSONB(astext_type=sa.Text()), nullable=True),

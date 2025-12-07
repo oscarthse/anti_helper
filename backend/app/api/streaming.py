@@ -141,7 +141,11 @@ async def task_event_generator(
                     data={
                         "task_id": str(task_id),
                         "status": task.status.value,
-                        "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+                        "completed_at": (
+                            task.completed_at.isoformat()
+                            if task.completed_at
+                            else None
+                        ),
                     },
                 ).to_dict()
                 break

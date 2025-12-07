@@ -294,7 +294,11 @@ def list_tasks(
         table.add_row(
             task["id"][:8] + "...",
             f"[{status_color}]{task['status']}[/{status_color}]",
-            task["user_request"][:40] + "..." if len(task["user_request"]) > 40 else task["user_request"],
+            (
+                task["user_request"][:40] + "..."
+                if len(task["user_request"]) > 40
+                else task["user_request"]
+            ),
             task["created_at"][:16],
         )
 
@@ -402,7 +406,9 @@ def db_downgrade(
 @db_app.command("revision")
 def db_revision(
     message: str = typer.Option(..., "--message", "-m", help="Revision message"),
-    autogenerate: bool = typer.Option(True, "--autogenerate/--no-autogenerate", help="Auto-detect changes"),
+    autogenerate: bool = typer.Option(
+        True, "--autogenerate/--no-autogenerate", help="Auto-detect changes"
+    ),
 ) -> None:
     """Create a new migration revision."""
     import subprocess

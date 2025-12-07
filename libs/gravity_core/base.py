@@ -17,11 +17,12 @@ from gravity_core.schema import (
     AgentPersona,
     ToolCall,
 )
+from gravity_core.tools.registry import ToolRegistry
 
 logger = structlog.get_logger()
 
 
-from gravity_core.tools.registry import ToolRegistry
+
 
 
 class BaseAgent(ABC):

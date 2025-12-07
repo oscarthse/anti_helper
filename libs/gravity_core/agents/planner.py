@@ -345,7 +345,8 @@ class PlannerAgent(BaseAgent):
                     f"Project Type: {summary.get('project_type', 'unknown')}\n"
                     f"Framework: {summary.get('framework', 'none')}\n"
                     f"Files: {summary.get('files', 0)}\n"
-                    f"Languages: {', '.join(f'{k}={v}' for k, v in summary.get('languages', {}).items())}"
+                    f"Languages: "
+                    f"{', '.join(f'{k}={v}' for k, v in summary.get('languages', {}).items())}"
                 )
 
                 # Get architectural context

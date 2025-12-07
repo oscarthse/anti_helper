@@ -8,7 +8,7 @@ verifying request/response handling and state changes.
 # Add project paths
 # Add project paths
 from datetime import datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest

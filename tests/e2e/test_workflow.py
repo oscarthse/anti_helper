@@ -14,9 +14,9 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 from gravity_core.schema import AgentOutput, AgentPersona
+from gravity_core.tools import runtime
 from gravity_core.tools.perception import get_file_signatures
 from gravity_core.tools.registry import ToolRegistry, tool
-from gravity_core.tools import runtime
 
 from backend.app.db.models import AgentLog, Repository, Task, TaskStatus
 
@@ -182,23 +182,27 @@ class TestSandboxIsolation:
              }
 
         with patch("gravity_core.tools.runtime.run_shell_command", side_effect=mock_run_shell):
-           for cmd in dangerous_commands:
-               result = await runtime.run_shell_command(cmd)
-               # result is dict from run_shell_command
-               # It succeeds if command runs, but exit code might be non-zero.
-               if result.get("success") is True and result.get("exit_code") == 0:
+            for cmd in dangerous_commands:
+                result = await runtime.run_shell_command(cmd)
+                # result is dict from run_shell_command
+                # It succeeds if command runs, but exit code might be non-zero.
+                if result.get("success") is True and result.get("exit_code") == 0:
                     # It shouldn't succeed with 0 exit code
-                    pytest.fail(f"Dangerous command {cmd} succeeded with 0 exit code: {result}")
+                    pytest.fail(f"Dangerous command {cmd} succeeded: {result}")
 
-               error_msg = result.get("error", "") or result.get("stderr", "") or result.get("stdout", "")
-               # If not blocked by sandbox, it might fail with permission error (rm -rf /)
-               assert (
-                   "blocked" in error_msg.lower()
-                   or "denied" in error_msg.lower()
-                   or "dangerous" in error_msg.lower()
-                   or "cannot remove" in error_msg.lower()
-                   or "operation not permitted" in error_msg.lower()
-               )
+                error_msg = (
+                    result.get("error", "")
+                    or result.get("stderr", "")
+                    or result.get("stdout", "")
+                )
+                # If not blocked by sandbox, it might fail with permission error
+                assert (
+                    "blocked" in error_msg.lower()
+                    or "denied" in error_msg.lower()
+                    or "dangerous" in error_msg.lower()
+                    or "cannot remove" in error_msg.lower()
+                    or "operation not permitted" in error_msg.lower()
+                )
 
 
 class TestFullLoopSimulation:
@@ -336,9 +340,11 @@ class TestExceptionHandling:
 
         # Quick command should work
         result = await runtime.run_shell_command("echo 'quick'", timeout_seconds=5)
-        # run_shell_command returns dict in test_tools.py context but ToolCall in failing test context?
+        # run_shell_command returns dict in test_tools.py context
+        # but ToolCall in failing test context?
         # No, run_shell_command in libs/gravity_core/tools/runtime.py returns dict.
-        # Wait, if runtime.py returns dict, why failed "ToolCall object is not subscriptable"?
+        # Wait, if runtime.py returns dict,
+        # why failed "ToolCall object is not subscriptable"?
         # Ah, ToolRegistry.execute returns ToolCall. run_shell_command returns dict directly?
         # test_workflow.py imports run_shell_command directly from runtime.
         # So it SHOULD be dict.
@@ -394,7 +400,8 @@ class TestExceptionHandling:
             def failing_tool() -> str:
                 raise RuntimeError("Intentional failure")
 
-            # The ToolRegistry.execute method accepts **kwargs, so we must unpack the dict or pass named args.
+            # The ToolRegistry.execute method accepts **kwargs,
+            # so we must unpack the dict or pass named args.
             result = await ToolRegistry.execute("failing_tool", **{})
 
             assert result.success is False
