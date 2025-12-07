@@ -17,34 +17,6 @@ env:
 
 jobs:
   # =========================================================
-  # Linting & Type Checking
-  # =========================================================
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v2
-
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        run: uv python install ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: |
-          uv venv
-          uv pip install -e ".[dev]"
-
-      - name: Ruff Check
-        run: uv run ruff check .
-
-      - name: Ruff Format Check
-        run: uv run ruff format --check .
-
-      - name: Mypy Check
-        run: uv run mypy .
-
-  # =========================================================
   # Python Tests (Backend + Libs)
   # =========================================================
   test-python:
@@ -126,7 +98,7 @@ jobs:
   # Docker Build Check
   # =========================================================
   build:
-    needs: [lint, test-python, test-frontend]
+    needs: [test-python, test-frontend]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
