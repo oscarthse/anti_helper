@@ -4,18 +4,19 @@ Unit Tests for Tool Registry
 Tests the tool registration, dispatch, and OpenAI-compatible schema generation.
 """
 
-import pytest
 import asyncio
-from typing import Any
 
 # Add project paths
 import sys
 from pathlib import Path
+
+import pytest
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "libs"))
 
-from gravity_core.tools.registry import ToolRegistry, tool
+from gravity_core.tools.registry import tool
 
 
 class TestToolDecorator:
@@ -86,9 +87,10 @@ class TestToolRegistry:
         def tool_two() -> str:
             return "two"
 
-        all_tools = clean_tool_registry.list_all()
-        assert "tool_one" in all_tools
-        assert "tool_two" in all_tools
+        all_tools = clean_tool_registry.list_tools()
+        names = [t["name"] for t in all_tools]
+        assert "tool_one" in names
+        assert "tool_two" in names
 
     def test_list_for_openai(self, clean_tool_registry):
         """Test generating OpenAI-compatible function definitions."""
@@ -120,7 +122,7 @@ class TestToolRegistry:
         def tool_c() -> str:
             return "c"
 
-        filtered = clean_tool_registry.list_for_openai(names=["tool_a", "tool_c"])
+        filtered = clean_tool_registry.list_for_openai(tool_names=["tool_a", "tool_c"])
 
         assert len(filtered) == 2
         names = [t["function"]["name"] for t in filtered]
@@ -133,6 +135,7 @@ class TestToolExecution:
     """Tests for tool execution with error handling."""
 
     @pytest.mark.asyncio
+    @pytest.mark.asyncio
     async def test_execute_sync_tool(self, clean_tool_registry):
         """Test executing a synchronous tool."""
 
@@ -140,11 +143,11 @@ class TestToolExecution:
         def sync_tool(value: str) -> str:
             return f"Processed: {value}"
 
-        result = await clean_tool_registry.execute("sync_tool", {"value": "test"})
+        result = await clean_tool_registry.execute("sync_tool", value="test")
 
-        assert result["success"] is True
-        assert result["result"] == "Processed: test"
-        assert "duration_ms" in result
+        assert result.success is True
+        assert result.result == "Processed: test"
+        assert result.duration_ms >= 0
 
     @pytest.mark.asyncio
     async def test_execute_async_tool(self, clean_tool_registry):
@@ -155,18 +158,18 @@ class TestToolExecution:
             await asyncio.sleep(0.01)
             return f"Async: {value}"
 
-        result = await clean_tool_registry.execute("async_tool", {"value": "test"})
+        result = await clean_tool_registry.execute("async_tool", value="test")
 
-        assert result["success"] is True
-        assert result["result"] == "Async: test"
+        assert result.success is True
+        assert result.result == "Async: test"
 
     @pytest.mark.asyncio
     async def test_execute_nonexistent_tool(self, clean_tool_registry):
         """Test executing a nonexistent tool returns error."""
-        result = await clean_tool_registry.execute("nonexistent", {})
+        result = await clean_tool_registry.execute("nonexistent")
 
-        assert result["success"] is False
-        assert "not found" in result["error"].lower()
+        assert result.success is False
+        assert "not found" in result.error.lower()
 
     @pytest.mark.asyncio
     async def test_execute_tool_with_exception(self, clean_tool_registry):
@@ -176,11 +179,11 @@ class TestToolExecution:
         def failing_tool(path: str) -> str:
             raise FileNotFoundError(f"File not found: {path}")
 
-        result = await clean_tool_registry.execute("failing_tool", {"path": "/nonexistent"})
+        result = await clean_tool_registry.execute("failing_tool", path="/nonexistent")
 
-        assert result["success"] is False
-        assert "FileNotFoundError" in result["error"]
-        assert "/nonexistent" in result["error"]
+        assert result.success is False
+        assert "File not found" in result.error
+        assert "/nonexistent" in result.error
 
     @pytest.mark.asyncio
     async def test_execute_tool_with_value_error(self, clean_tool_registry):
@@ -192,11 +195,10 @@ class TestToolExecution:
                 raise ValueError("Value must be non-negative")
             return value * 2
 
-        result = await clean_tool_registry.execute("validate_input", {"value": -5})
+        result = await clean_tool_registry.execute("validate_input", value=-5)
 
-        assert result["success"] is False
-        assert "ValueError" in result["error"]
-        assert "non-negative" in result["error"]
+        assert result.success is False
+        assert "non-negative" in result.error
 
     @pytest.mark.asyncio
     async def test_execute_tool_with_permission_error(self, clean_tool_registry):
@@ -206,10 +208,10 @@ class TestToolExecution:
         def access_protected() -> str:
             raise PermissionError("Access denied to protected resource")
 
-        result = await clean_tool_registry.execute("access_protected", {})
+        result = await clean_tool_registry.execute("access_protected")
 
-        assert result["success"] is False
-        assert "PermissionError" in result["error"]
+        assert result.success is False
+        assert "Access denied" in result.error
 
     @pytest.mark.asyncio
     async def test_execute_tracks_duration(self, clean_tool_registry):
@@ -220,10 +222,10 @@ class TestToolExecution:
             await asyncio.sleep(0.1)  # 100ms
             return "done"
 
-        result = await clean_tool_registry.execute("slow_tool", {})
+        result = await clean_tool_registry.execute("slow_tool")
 
-        assert result["success"] is True
-        assert result["duration_ms"] >= 100
+        assert result.success is True
+        assert result.duration_ms >= 100
 
 
 class TestToolSchemaGeneration:
@@ -251,12 +253,11 @@ class TestToolSchemaGeneration:
 
     def test_schema_with_optional_params(self, clean_tool_registry):
         """Test schema generation for optional parameters."""
-        from typing import Optional
 
         @tool(description="Optional params")
         def optional_params(
             required_param: str,
-            optional_param: Optional[str] = None,
+            optional_param: str | None = None,
         ) -> str:
             return required_param
 

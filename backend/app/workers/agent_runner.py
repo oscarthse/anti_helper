@@ -19,15 +19,14 @@ from __future__ import annotations
 import asyncio
 import json
 import traceback
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 from uuid import UUID
 
 import dramatiq
 import structlog
 from dramatiq.brokers.redis import RedisBroker
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from backend.app.config import settings
 
@@ -181,17 +180,18 @@ async def _run_planning_phase(
     task,
     repo,
     context: dict,
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """
     Execute the planning phase of the workflow.
 
     Returns:
         Tuple of (success, error_message)
     """
-    from backend.app.db.models import TaskStatus
     from gravity_core.agents.planner import PlannerAgent
     from gravity_core.llm import LLMClient
     from gravity_core.memory.project_map import ProjectMap
+
+    from backend.app.db.models import TaskStatus
 
     # --- Step 1: Initialize Services ---
     llm_client = LLMClient(
@@ -280,7 +280,7 @@ async def _run_execution_phase(
     repo,
     context: dict,
     max_fix_attempts: int = 3,
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """
     Execute the coding and testing phase with automated fix loop.
 
@@ -293,10 +293,11 @@ async def _run_execution_phase(
     Returns:
         Tuple of (success, error_message)
     """
-    from backend.app.db.models import TaskStatus
     from gravity_core.agents.coder import CoderAgent
     from gravity_core.agents.qa import QAAgent
     from gravity_core.llm import LLMClient
+
+    from backend.app.db.models import TaskStatus
 
     # Initialize shared LLM client
     llm_client = LLMClient(
@@ -500,7 +501,7 @@ async def _run_execution_phase(
     # Mark as completed
     task.status = TaskStatus.COMPLETED
     task.current_agent = None
-    task.completed_at = datetime.now(timezone.utc)
+    task.completed_at = datetime.now(UTC)
     await session.commit()
 
     logger.info(
@@ -523,7 +524,7 @@ async def _run_documentation_phase(
     repo,
     context: dict,
     all_changes: dict,
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """
     Execute the documentation phase - final step before completion.
 
@@ -712,7 +713,7 @@ async def _run_task_async(task_id: str) -> None:
                 task.status = TaskStatus.FAILED
                 task.error_message = f"{type(e).__name__}: {str(e)}"
                 task.retry_count += 1
-                task.updated_at = datetime.now(timezone.utc)
+                task.updated_at = datetime.now(UTC)
 
                 # Log the crash to AgentLog for SSE visibility
                 try:

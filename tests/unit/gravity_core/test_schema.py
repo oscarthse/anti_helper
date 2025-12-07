@@ -5,30 +5,28 @@ Tests the Explainability Contract - all agent outputs must conform
 to the defined Pydantic models with proper validation.
 """
 
-import pytest
-from datetime import datetime
-from uuid import uuid4
-
 # Add project paths
 import sys
 from pathlib import Path
+
+import pytest
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "libs"))
 
-from pydantic import ValidationError
-
 from gravity_core.schema import (
     AgentOutput,
     AgentPersona,
-    ToolCall,
-    TaskPlan,
-    TaskStep,
     ChangeSet,
-    ExecutionRun,
     DocUpdateLog,
+    ExecutionRun,
+    TaskPlan,
     TaskStatus,
+    TaskStep,
+    ToolCall,
 )
+from pydantic import ValidationError
 
 
 class TestAgentOutput:

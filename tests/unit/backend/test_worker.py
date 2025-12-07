@@ -8,13 +8,14 @@ Tests the agent_runner worker orchestration:
 - Agent logging to database
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
-
 # Add project paths
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
+import pytest
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "libs"))
@@ -96,8 +97,8 @@ class TestWorkerOrchestration:
         """
         Test happy path: Task is processed and moves to EXECUTING state.
         """
-        from backend.app.workers.agent_runner import _run_planning_phase
         from backend.app.db.models import TaskStatus
+        from backend.app.workers.agent_runner import _run_planning_phase
 
         # Mock dependencies at their source locations
         with patch('gravity_core.llm.LLMClient') as mock_llm_class, \
@@ -144,8 +145,8 @@ class TestWorkerOrchestration:
         """
         Test: Low confidence score triggers PLAN_REVIEW state.
         """
-        from backend.app.workers.agent_runner import _run_planning_phase
         from backend.app.db.models import TaskStatus
+        from backend.app.workers.agent_runner import _run_planning_phase
 
         with patch('gravity_core.llm.LLMClient') as mock_llm_class, \
              patch('gravity_core.memory.project_map.ProjectMap') as mock_pm_class, \
@@ -225,8 +226,9 @@ class TestLogAgentOutput:
     @pytest.mark.asyncio
     async def test_log_agent_output_creates_entry(self):
         """Test that log_agent_output creates an AgentLog entry."""
-        from backend.app.workers.agent_runner import log_agent_output
         from gravity_core.schema import AgentOutput, AgentPersona
+
+        from backend.app.workers.agent_runner import log_agent_output
 
         mock_session = MagicMock()
         mock_session.add = MagicMock()
@@ -280,8 +282,8 @@ class TestResumeTask:
     @pytest.mark.asyncio
     async def test_resume_approved_sets_executing(self):
         """Test that approving a task sets status to EXECUTING."""
-        from backend.app.workers.agent_runner import _resume_task_async
         from backend.app.db.models import TaskStatus
+        from backend.app.workers.agent_runner import _resume_task_async
 
         mock_task = MagicMock()
         mock_task.status = TaskStatus.PLAN_REVIEW
@@ -303,8 +305,8 @@ class TestResumeTask:
     @pytest.mark.asyncio
     async def test_resume_rejected_sets_failed(self):
         """Test that rejecting a task sets status to FAILED."""
-        from backend.app.workers.agent_runner import _resume_task_async
         from backend.app.db.models import TaskStatus
+        from backend.app.workers.agent_runner import _resume_task_async
 
         mock_task = MagicMock()
         mock_task.status = TaskStatus.PLAN_REVIEW

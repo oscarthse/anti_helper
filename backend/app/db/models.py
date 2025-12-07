@@ -7,11 +7,9 @@ in the Antigravity Dev platform.
 
 import enum
 from datetime import datetime
-from typing import Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
-    Column,
     DateTime,
     Enum,
     Float,
@@ -20,7 +18,8 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -59,11 +58,11 @@ class Repository(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     path: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Project metadata (populated by ProjectMap)
-    project_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    framework: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    project_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    framework: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -110,7 +109,7 @@ class Task(Base):
 
     # Task definition
     user_request: Mapped[str] = mapped_column(Text, nullable=False)
-    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Current state
     status: Mapped[TaskStatus] = mapped_column(
@@ -118,14 +117,14 @@ class Task(Base):
         default=TaskStatus.PENDING,
         nullable=False,
     )
-    current_agent: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    current_agent: Mapped[str | None] = mapped_column(String(50), nullable=True)
     current_step: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Planning output
-    task_plan: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    task_plan: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Error tracking
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Timestamps
@@ -140,7 +139,7 @@ class Task(Base):
         onupdate=datetime.utcnow,
         nullable=False,
     )
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Relationships
     repository: Mapped["Repository"] = relationship(
@@ -189,7 +188,7 @@ class AgentLog(Base):
 
     # Technical fields
     technical_reasoning: Mapped[str] = mapped_column(Text, nullable=False)
-    tool_calls: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    tool_calls: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     # Confidence and review
     confidence_score: Mapped[float] = mapped_column(
@@ -201,8 +200,8 @@ class AgentLog(Base):
         default=False,
         nullable=False,
     )
-    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    reviewed_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -210,7 +209,7 @@ class AgentLog(Base):
         default=datetime.utcnow,
         nullable=False,
     )
-    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Relationships
     task: Mapped["Task"] = relationship(
@@ -254,7 +253,7 @@ class ChangeSet(Base):
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Metadata
-    language: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    language: Mapped[str | None] = mapped_column(String(50), nullable=True)
     lines_added: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     lines_removed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
@@ -309,7 +308,7 @@ class RepositorySecret(Base):
     )
 
     # Metadata
-    description: Mapped[Optional[str]] = mapped_column(
+    description: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Optional description of what this secret is used for",

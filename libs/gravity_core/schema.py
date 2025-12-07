@@ -8,11 +8,10 @@ adhering to the Explainability First mandate.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
-
 
 # =============================================================================
 # Agent Personas
@@ -49,7 +48,7 @@ class ToolCall(BaseModel):
         default_factory=dict,
         description="Arguments passed to the tool"
     )
-    result: Optional[str] = Field(
+    result: str | None = Field(
         default=None,
         description="Result returned by the tool (populated after execution)"
     )
@@ -57,11 +56,11 @@ class ToolCall(BaseModel):
         default=True,
         description="Whether the tool execution succeeded"
     )
-    error: Optional[str] = Field(
+    error: str | None = Field(
         default=None,
         description="Error message if the tool failed"
     )
-    duration_ms: Optional[int] = Field(
+    duration_ms: int | None = Field(
         default=None,
         description="Execution time in milliseconds"
     )
@@ -135,7 +134,7 @@ class TaskStep(BaseModel):
     order: int = Field(description="Execution order (1-indexed)")
     description: str = Field(description="What this step accomplishes")
     agent_persona: AgentPersona = Field(description="Which agent should execute this")
-    estimated_tokens: Optional[int] = Field(
+    estimated_tokens: int | None = Field(
         default=None,
         description="Estimated LLM tokens for this step"
     )
@@ -197,12 +196,12 @@ class ChangeSet(BaseModel):
     explanation: str = Field(
         description="Human-readable explanation of what the change does"
     )
-    language: Optional[str] = Field(
+    language: str | None = Field(
         default=None,
         description="Programming language of the file"
     )
-    line_count_before: Optional[int] = Field(default=None)
-    line_count_after: Optional[int] = Field(default=None)
+    line_count_before: int | None = Field(default=None)
+    line_count_after: int | None = Field(default=None)
 
 
 class ExecutionRun(BaseModel):

@@ -8,9 +8,14 @@
 
 | Component | Role | Technology |
 |-----------|------|------------|
-| **THE BRAIN** (GravityCore) | Intelligence & Skillset | Custom Python library with agent personas, LLM integration, and tools |
+| **THE BRAIN** (GravityCore) | Intelligence & Skillset | Custom Python library with agent personas, LLM integration (`client.py`), and 15+ tools |
 | **THE BODY** (FastAPI) | State Manager & Dispatcher | FastAPI, SQLAlchemy Async, Dramatiq, Redis, Alembic |
-| **THE FACE** (Frontend) | Visual Renderer | Next.js, TypeScript, SSE Streaming |
+| **THE FACE** (Frontend) | Visual Renderer | Next.js 14, TypeScript, Tailwind, Shadcn UI, Framer Motion |
+
+**Recent Critical Updates:**
+- 🛡️ **Security Hardened:** Sandbox isolation strictly enforced (no local fallback).
+- ⚡ **Async Optimized:** Database inspection runs in non-blocking threads.
+- 🔗 **Connected Nervous System:** API fully integrated with Dramatiq workers.
 
 ## 🤖 Agent Personas
 
@@ -35,7 +40,7 @@ antigravity-dev/
 │   │   ├── coder.py            # CODER_* ✅
 │   │   ├── qa.py               # QA (diagnose + fix) ✅
 │   │   └── docs.py             # DOCS ✅
-│   ├── tools/                  # 15 registered tools
+│   ├── tools/                  # 15 registered tools (Runtime, Git, Files)
 │   ├── memory/                 # ProjectMap context manager
 │   ├── llm/
 │   │   └── client.py           # LLMClient (OpenAI/Gemini)
@@ -56,10 +61,13 @@ antigravity-dev/
 │   └── scripts/
 │       └── gravity_cli.py      # CLI (repo, task, db commands)
 │
-├── frontend/                   # The Face
-│   ├── src/components/         # React components
+├── frontend/                   # The Face (Next.js 14)
+│   ├── src/
+│   │   ├── app/                # App Router Layouts & Pages
+│   │   ├── components/         # Shadcn UI + AgentCard
+│   │   └── types/              # Synced with Python Pydantic models
 │   ├── tests/                  # Jest + RTL tests (45 passing)
-│   └── types/schema.ts         # Auto-generated types
+│   └── tailwind.config.ts      # Zinc Theme Configuration
 │
 ├── tests/                      # Python test suite (51+ passing)
 │   ├── unit/gravity_core/      # Agent + utility tests
@@ -75,26 +83,37 @@ antigravity-dev/
 ### Prerequisites
 
 - Python 3.11+
+- Node.js 18+ (for Frontend)
 - Docker & Docker Compose
 - PostgreSQL 16, Redis 7
 
 ### Installation
 
 ```bash
-# Install dependencies
+# 1. Install Python dependencies
 uv pip install -e ".[dev]"
 
-# Configure environment
+# 2. Configure environment
 cp .env.example .env
+# Edit .env and set OPENAI_API_KEY and ANTIGRAVITY_ENCRYPTION_KEY
 
-# Start infrastructure
+# 3. Start infrastructure (DB + Redis)
 docker-compose up -d postgres redis
 
-# Run database migrations
-alembic upgrade head
+# 4. Run database migrations
+gravity db upgrade head
 
-# Start the API
+# 5. Start the API
 uvicorn backend.app.main:app --reload
+
+# 6. Start the Worker (in a separate terminal)
+dramatiq backend.app.workers --processes 2
+
+# 7. Start the Frontend (in a separate terminal)
+cd frontend
+npm install
+npm run dev
+# Visit http://localhost:3000
 ```
 
 ### CLI Commands
@@ -177,16 +196,10 @@ response = await client.generate_with_tools(
 ```bash
 # Run all tests
 pytest
-
-# Run specific suites
-pytest tests/unit/gravity_core/test_planner.py -v
-pytest tests/unit/gravity_core/test_docs.py -v
+cd frontend && npm test
 
 # Lint & format
 ruff check . && ruff format .
-
-# Start workers
-dramatiq backend.app.workers --processes 2
 ```
 
 ## 📊 Test Coverage

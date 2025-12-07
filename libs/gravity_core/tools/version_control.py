@@ -7,7 +7,6 @@ before finalizing modifications.
 
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 import structlog
 
@@ -55,7 +54,7 @@ async def git_commit_changes(
     path: str,
     message: str,
     type: str = "feat",
-    scope: Optional[str] = None,
+    scope: str | None = None,
     stage_all: bool = False,
 ) -> dict:
     """
@@ -164,7 +163,7 @@ async def git_commit_changes(
 )
 async def git_diff_staged(
     path: str,
-    file_path: Optional[str] = None,
+    file_path: str | None = None,
     context_lines: int = 3,
 ) -> dict:
     """

@@ -15,19 +15,18 @@ Key Responsibilities:
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 import structlog
 
 from gravity_core.base import BaseAgent
+from gravity_core.llm import LLMClient, LLMClientError, LLMValidationError
 from gravity_core.schema import (
     AgentOutput,
     AgentPersona,
     ChangeSet,
-    ToolCall,
 )
-from gravity_core.llm import LLMClient, LLMClientError, LLMValidationError
 
 logger = structlog.get_logger(__name__)
 
@@ -238,7 +237,7 @@ class CoderAgent(BaseAgent):
     def __init__(
         self,
         specialty: str = "backend",
-        llm_client: Optional[LLMClient] = None,
+        llm_client: LLMClient | None = None,
         model_name: str = "gpt-4o",
         **kwargs: Any,
     ) -> None:

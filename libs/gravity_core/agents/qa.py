@@ -14,19 +14,19 @@ Key Responsibilities:
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 import structlog
 
 from gravity_core.base import BaseAgent
+from gravity_core.llm import LLMClient, LLMClientError
 from gravity_core.schema import (
     AgentOutput,
     AgentPersona,
     ExecutionRun,
     ToolCall,
 )
-from gravity_core.llm import LLMClient, LLMClientError, LLMValidationError
 
 logger = structlog.get_logger(__name__)
 
@@ -139,7 +139,7 @@ class QAAgent(BaseAgent):
 
     def __init__(
         self,
-        llm_client: Optional[LLMClient] = None,
+        llm_client: LLMClient | None = None,
         model_name: str = "gpt-4o",
         max_fix_attempts: int = 3,
         **kwargs: Any,
@@ -158,7 +158,7 @@ class QAAgent(BaseAgent):
         self.llm_client = llm_client or LLMClient()
         self.max_fix_attempts = max_fix_attempts
         self._execution_runs: list[ExecutionRun] = []
-        self._suggested_fix: Optional[ToolCall] = None
+        self._suggested_fix: ToolCall | None = None
 
         logger.info(
             "qa_initialized",
@@ -205,7 +205,7 @@ class QAAgent(BaseAgent):
             # =================================================================
 
             all_passed = True
-            failed_run: Optional[ExecutionRun] = None
+            failed_run: ExecutionRun | None = None
 
             for command in test_commands:
                 run = await self._execute_test(command, repo_path)
@@ -300,7 +300,7 @@ class QAAgent(BaseAgent):
         failed_run: ExecutionRun,
         last_changeset: dict,
         plan_step: dict,
-    ) -> Optional[ToolCall]:
+    ) -> ToolCall | None:
         """
         Use LLM to diagnose failure and generate a fix.
 
@@ -494,6 +494,6 @@ Focus on the actual error, not workarounds."""
         """Check if the last execution produced a fix suggestion."""
         return self._suggested_fix is not None
 
-    def get_suggested_fix(self) -> Optional[ToolCall]:
+    def get_suggested_fix(self) -> ToolCall | None:
         """Get the suggested fix from the last execution."""
         return self._suggested_fix

@@ -5,15 +5,16 @@ Tests the complete agent pipeline with mocked LLM responses,
 verifying the full loop from task creation to completion.
 """
 
-import pytest
-import pytest_asyncio
-from uuid import uuid4
-from datetime import datetime
-from unittest.mock import AsyncMock, patch, MagicMock
-
 # Add project paths
 import sys
+from datetime import datetime
 from pathlib import Path
+from unittest.mock import AsyncMock
+from uuid import uuid4
+
+import pytest
+import pytest_asyncio
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "libs"))
@@ -178,7 +179,7 @@ class TestFullLoopSimulation:
     @pytest_asyncio.fixture
     async def task_with_workflow(self, db_session, sample_repository_data):
         """Create a task and simulate workflow progression."""
-        from backend.app.db.models import Repository, Task, TaskStatus, AgentLog
+        from backend.app.db.models import Repository, Task, TaskStatus
 
         # Create repository
         repo = Repository(**sample_repository_data)
@@ -234,7 +235,7 @@ class TestFullLoopSimulation:
     @pytest.mark.asyncio
     async def test_agent_logs_are_created(self, task_with_workflow):
         """Test that agent logs are created during workflow."""
-        from backend.app.db.models import TaskStatus, AgentLog
+        from backend.app.db.models import AgentLog
 
         task = task_with_workflow["task"]
         session = task_with_workflow["session"]

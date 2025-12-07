@@ -5,8 +5,6 @@ A beautiful CLI for interacting with the Antigravity Dev platform.
 """
 
 import asyncio
-from typing import Optional
-from uuid import UUID
 
 import httpx
 import typer
@@ -38,7 +36,7 @@ app.add_typer(repo_app, name="repo")
 @repo_app.command("add")
 def add_repo(
     path: str = typer.Argument(..., help="Path to the repository"),
-    name: Optional[str] = typer.Option(None, "--name", "-n", help="Display name"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Display name"),
 ) -> None:
     """Register a repository for agent access."""
 
@@ -74,7 +72,7 @@ def add_repo(
             title="Success",
         ))
     elif response.status_code == 409:
-        rprint(f"[yellow]Repository already registered[/yellow]")
+        rprint("[yellow]Repository already registered[/yellow]")
     else:
         rprint(f"[red]Error:[/red] {response.json().get('detail', 'Unknown error')}")
         raise typer.Exit(1)
@@ -87,7 +85,7 @@ def list_repos() -> None:
     response = httpx.get(f"{API_URL}/api/repos/", timeout=10)
 
     if response.status_code != 200:
-        rprint(f"[red]Error:[/red] Failed to fetch repositories")
+        rprint("[red]Error:[/red] Failed to fetch repositories")
         raise typer.Exit(1)
 
     repos = response.json()
@@ -163,7 +161,7 @@ def run_task(
 ) -> None:
     """Submit a task for AI execution."""
 
-    rprint(f"\n[bold]Creating task...[/bold]")
+    rprint("\n[bold]Creating task...[/bold]")
     rprint(f"Repository: {repo_id[:8]}...")
     rprint(f"Request: {request[:100]}{'...' if len(request) > 100 else ''}\n")
 
@@ -190,7 +188,7 @@ def run_task(
     )
 
     if exec_response.status_code != 200:
-        rprint(f"[yellow]Warning:[/yellow] Could not trigger execution")
+        rprint("[yellow]Warning:[/yellow] Could not trigger execution")
 
     # Stream progress
     rprint("[bold]Streaming progress...[/bold]\n")
@@ -233,7 +231,7 @@ def _stream_task_progress(task_id: str) -> None:
                 if data["status"] == "completed":
                     rprint("\n[green bold]✓ Task completed successfully![/green bold]")
                 else:
-                    rprint(f"\n[red bold]✗ Task failed[/red bold]")
+                    rprint("\n[red bold]✗ Task failed[/red bold]")
                 break
 
             elif event.event == "error":
@@ -259,7 +257,7 @@ def _stream_task_progress(task_id: str) -> None:
 
 @task_app.command("list")
 def list_tasks(
-    repo_id: Optional[str] = typer.Option(None, "--repo", "-r", help="Filter by repository"),
+    repo_id: str | None = typer.Option(None, "--repo", "-r", help="Filter by repository"),
     limit: int = typer.Option(10, "--limit", "-n", help="Number of tasks to show"),
 ) -> None:
     """List recent tasks."""
@@ -271,7 +269,7 @@ def list_tasks(
     response = httpx.get(f"{API_URL}/api/tasks/", params=params, timeout=10)
 
     if response.status_code != 200:
-        rprint(f"[red]Error:[/red] Failed to fetch tasks")
+        rprint("[red]Error:[/red] Failed to fetch tasks")
         raise typer.Exit(1)
 
     tasks = response.json()
@@ -312,11 +310,11 @@ def task_status(
     response = httpx.get(f"{API_URL}/api/tasks/{task_id}", timeout=10)
 
     if response.status_code == 404:
-        rprint(f"[red]Error:[/red] Task not found")
+        rprint("[red]Error:[/red] Task not found")
         raise typer.Exit(1)
 
     if response.status_code != 200:
-        rprint(f"[red]Error:[/red] Failed to fetch task")
+        rprint("[red]Error:[/red] Failed to fetch task")
         raise typer.Exit(1)
 
     task = response.json()

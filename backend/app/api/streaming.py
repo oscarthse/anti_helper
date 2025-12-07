@@ -6,8 +6,8 @@ Server-Sent Events for pushing agent progress to the frontend.
 
 import asyncio
 import json
+from collections.abc import AsyncGenerator
 from datetime import datetime
-from typing import AsyncGenerator, Optional
 from uuid import UUID
 
 import structlog
@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
-from backend.app.db import Task, AgentLog, get_session
+from backend.app.db import AgentLog, Task, get_session
 
 logger = structlog.get_logger()
 
@@ -35,7 +35,7 @@ class SSEEvent:
         self,
         event: str,
         data: dict,
-        id: Optional[str] = None,
+        id: str | None = None,
     ) -> None:
         self.event = event
         self.data = data
@@ -57,7 +57,7 @@ class SSEEvent:
 async def task_event_generator(
     task_id: UUID,
     session: AsyncSession,
-    last_event_id: Optional[str] = None,
+    last_event_id: str | None = None,
 ) -> AsyncGenerator[dict, None]:
     """
     Generate SSE events for a task's progress.
@@ -209,7 +209,7 @@ async def global_event_generator(
 @router.get("/task/{task_id}")
 async def stream_task_events(
     task_id: UUID,
-    last_event_id: Optional[str] = Query(None, alias="Last-Event-ID"),
+    last_event_id: str | None = Query(None, alias="Last-Event-ID"),
     session: AsyncSession = Depends(get_session),
 ) -> EventSourceResponse:
     """

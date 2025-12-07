@@ -6,9 +6,7 @@ search for patterns, and extract code signatures.
 """
 
 import ast
-import os
 from pathlib import Path
-from typing import Optional
 
 import structlog
 
@@ -47,7 +45,7 @@ logger = structlog.get_logger()
 async def scan_repo_structure(
     path: str,
     max_depth: int = 4,
-    exclude_patterns: Optional[list[str]] = None,
+    exclude_patterns: list[str] | None = None,
 ) -> dict:
     """
     Scan repository structure and return file tree.
@@ -266,15 +264,13 @@ async def get_file_signatures(
 
     signatures = []
 
-    for node in ast.walk(tree):
+    for node in tree.body:
         if isinstance(node, ast.ClassDef):
             sig = _extract_class_signature(node, content, include_docstrings)
             signatures.append(sig)
         elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            # Skip methods (handled as part of class)
-            if not any(isinstance(parent, ast.ClassDef) for parent in ast.walk(tree)):
-                sig = _extract_function_signature(node, content, include_docstrings)
-                signatures.append(sig)
+            sig = _extract_function_signature(node, content, include_docstrings)
+            signatures.append(sig)
 
     return {
         "file": path,

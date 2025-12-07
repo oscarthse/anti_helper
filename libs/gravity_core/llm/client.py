@@ -20,22 +20,23 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Type, TypeVar, Optional
 from enum import Enum
+from typing import TypeVar
 
 import structlog
 from pydantic import BaseModel, ValidationError
 from tenacity import (
+    RetryError,
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
-    RetryError,
 )
 
 # LLM Provider SDKs
 try:
-    from openai import AsyncOpenAI, APIError as OpenAIAPIError, RateLimitError
+    from openai import APIError as OpenAIAPIError
+    from openai import AsyncOpenAI, RateLimitError
 except ImportError:
     AsyncOpenAI = None  # type: ignore
     OpenAIAPIError = Exception  # type: ignore
@@ -43,7 +44,7 @@ except ImportError:
 
 try:
     import google.generativeai as genai
-    from google.api_core.exceptions import ResourceExhausted, GoogleAPIError
+    from google.api_core.exceptions import GoogleAPIError, ResourceExhausted
 except ImportError:
     genai = None  # type: ignore
     ResourceExhausted = Exception  # type: ignore
@@ -229,7 +230,7 @@ class LLMClient:
     async def generate_structured_output(
         self,
         prompt: str,
-        output_schema: Type[T] = AgentOutput,  # type: ignore
+        output_schema: type[T] = AgentOutput,  # type: ignore
         model_name: str | None = None,
         tools: list[dict] | None = None,
         system_prompt: str | None = None,
@@ -315,7 +316,7 @@ class LLMClient:
         provider: LLMProvider,
         model_name: str,
         prompt: str,
-        output_schema: Type[T],
+        output_schema: type[T],
         tools: list[dict] | None,
         system_prompt: str | None,
         temperature: float,
@@ -362,7 +363,7 @@ class LLMClient:
         self,
         model_name: str,
         prompt: str,
-        output_schema: Type[T],
+        output_schema: type[T],
         tools: list[dict] | None,
         system_prompt: str | None,
         temperature: float,
@@ -447,7 +448,7 @@ class LLMClient:
         self,
         model_name: str,
         prompt: str,
-        output_schema: Type[T],
+        output_schema: type[T],
         tools: list[dict] | None,
         system_prompt: str | None,
         temperature: float,
@@ -512,7 +513,7 @@ class LLMClient:
     def _validate_response(
         self,
         content: str,
-        output_schema: Type[T],
+        output_schema: type[T],
         provider: str,
     ) -> T:
         """Validate and parse LLM response against Pydantic schema."""
@@ -548,7 +549,7 @@ class LLMClient:
                 ],
             )
 
-    def _get_default_system_prompt(self, output_schema: Type[BaseModel]) -> str:
+    def _get_default_system_prompt(self, output_schema: type[BaseModel]) -> str:
         """Generate default system prompt for structured output."""
         schema_json = json.dumps(output_schema.model_json_schema(), indent=2)
         return f"""You are an AI assistant that must respond with valid JSON matching this schema:

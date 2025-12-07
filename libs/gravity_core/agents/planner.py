@@ -19,21 +19,20 @@ Security Constraints:
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 import structlog
 
 from gravity_core.base import BaseAgent
+from gravity_core.llm import LLMClient, LLMClientError, LLMValidationError
+from gravity_core.memory.project_map import ProjectMap
 from gravity_core.schema import (
     AgentOutput,
     AgentPersona,
     TaskPlan,
-    TaskStep,
     ToolCall,
 )
-from gravity_core.llm import LLMClient, LLMValidationError, LLMClientError
-from gravity_core.memory.project_map import ProjectMap
 
 logger = structlog.get_logger(__name__)
 
@@ -157,8 +156,8 @@ class PlannerAgent(BaseAgent):
 
     def __init__(
         self,
-        llm_client: Optional[LLMClient] = None,
-        project_map: Optional[ProjectMap] = None,
+        llm_client: LLMClient | None = None,
+        project_map: ProjectMap | None = None,
         model_name: str = "gpt-4o",
     ):
         """

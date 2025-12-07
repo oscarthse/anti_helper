@@ -5,13 +5,13 @@ Tests multi-provider routing, structured output validation,
 retry logic, and error handling.
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from pydantic import BaseModel
-
 # Add project paths
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "libs"))
@@ -19,10 +19,9 @@ sys.path.insert(0, str(PROJECT_ROOT / "libs"))
 from gravity_core.llm.client import (
     LLMClient,
     LLMClientError,
-    LLMValidationError,
-    LLMProviderError,
-    LLMRateLimitError,
     LLMProvider,
+    LLMRateLimitError,
+    LLMValidationError,
 )
 from gravity_core.schema import AgentOutput
 

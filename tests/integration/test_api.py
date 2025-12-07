@@ -5,20 +5,21 @@ Tests the API endpoints with a test database,
 verifying request/response handling and state changes.
 """
 
-import pytest
-import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from uuid import uuid4
-from datetime import datetime
-
 # Add project paths
 import sys
+from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
+
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.app.main import app
 from backend.app.db.session import get_session
+from backend.app.main import app
 
 
 class TestHealthEndpoints:

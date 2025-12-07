@@ -10,9 +10,7 @@ The master encryption key is loaded from environment variable.
 
 from __future__ import annotations
 
-import base64
 import os
-from typing import Optional
 
 import structlog
 from cryptography.fernet import Fernet, InvalidToken
@@ -53,8 +51,8 @@ def _get_master_key() -> bytes:
 
     if not key:
         raise KeyNotConfiguredError(
-            "ANTIGRAVITY_ENCRYPTION_KEY environment variable is not set. "
-            "Generate a key with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+            "Generate a key with: python -c "
+            "'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
         )
 
     return key.encode()
@@ -168,7 +166,7 @@ def is_encrypted(value: str) -> bool:
     return value.startswith("gAAAAA") or value.startswith("gAAAAAB")
 
 
-def rotate_secret(old_ciphertext: str, new_key: Optional[str] = None) -> str:
+def rotate_secret(old_ciphertext: str, new_key: str | None = None) -> str:
     """
     Re-encrypt a secret with a new key.
 

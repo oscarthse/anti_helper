@@ -8,7 +8,8 @@ structured output conforming to the Explainability Contract.
 
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Optional, Type
+from collections.abc import Callable
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -22,89 +23,7 @@ from gravity_core.schema import (
 logger = structlog.get_logger()
 
 
-class ToolRegistry:
-    """
-    Registry for all available tools.
-
-    Tools are registered by name and can be looked up and executed
-    by agents during their workflow.
-    """
-
-    _tools: dict[str, Callable] = {}
-    _schemas: dict[str, dict] = {}
-
-    @classmethod
-    def register(
-        cls,
-        name: str,
-        func: Callable,
-        schema: Optional[dict] = None,
-        description: str = "",
-    ) -> None:
-        """Register a tool with the registry."""
-        cls._tools[name] = func
-        cls._schemas[name] = {
-            "name": name,
-            "description": description,
-            "parameters": schema or {},
-        }
-        logger.info("tool_registered", name=name)
-
-    @classmethod
-    def get(cls, name: str) -> Optional[Callable]:
-        """Get a tool by name."""
-        return cls._tools.get(name)
-
-    @classmethod
-    def list_tools(cls) -> list[dict]:
-        """List all registered tools with their schemas."""
-        return list(cls._schemas.values())
-
-    @classmethod
-    async def execute(cls, name: str, **kwargs: Any) -> ToolCall:
-        """
-        Execute a tool and return a ToolCall result.
-
-        This wraps the tool execution with timing and error handling.
-        """
-        tool = cls.get(name)
-        if not tool:
-            return ToolCall(
-                tool_name=name,
-                arguments=kwargs,
-                success=False,
-                error=f"Tool '{name}' not found in registry",
-            )
-
-        start_time = time.perf_counter()
-        try:
-            # Support both sync and async tools
-            import asyncio
-            if asyncio.iscoroutinefunction(tool):
-                result = await tool(**kwargs)
-            else:
-                result = tool(**kwargs)
-
-            duration_ms = int((time.perf_counter() - start_time) * 1000)
-
-            return ToolCall(
-                tool_name=name,
-                arguments=kwargs,
-                result=str(result) if result is not None else None,
-                success=True,
-                duration_ms=duration_ms,
-            )
-        except Exception as e:
-            duration_ms = int((time.perf_counter() - start_time) * 1000)
-            logger.error("tool_execution_failed", tool=name, error=str(e))
-            return ToolCall(
-                tool_name=name,
-                arguments=kwargs,
-                success=False,
-                error=str(e),
-                duration_ms=duration_ms,
-            )
-
+from gravity_core.tools.registry import ToolRegistry, tool
 
 class BaseAgent(ABC):
     """
@@ -122,12 +41,12 @@ class BaseAgent(ABC):
     persona: AgentPersona
     system_prompt: str
     available_tools: list[str]
-    output_schema: Type[AgentOutput] = AgentOutput
+    output_schema: type[AgentOutput] = AgentOutput
 
     def __init__(
         self,
         llm_provider: str = "openai",
-        model: Optional[str] = None,
+        model: str | None = None,
         temperature: float = 0.1,
     ) -> None:
         """
@@ -168,6 +87,7 @@ class BaseAgent(ABC):
                 arguments=kwargs,
                 success=False,
                 error=f"Tool '{tool_name}' not available to {self.persona.value} agent",
+                duration_ms=0,
             )
         else:
             result = await ToolRegistry.execute(tool_name, **kwargs)
@@ -181,7 +101,7 @@ class BaseAgent(ABC):
         ui_subtitle: str,
         technical_reasoning: str,
         confidence_score: float,
-        tool_calls: Optional[list[ToolCall]] = None,
+        tool_calls: list[ToolCall] | None = None,
     ) -> AgentOutput:
         """
         Build the standardized agent output.
@@ -231,22 +151,3 @@ class BaseAgent(ABC):
         """Allow agents to be called directly."""
         self._tool_calls = []  # Reset tool calls for new execution
         return await self.execute(task_id, context)
-
-
-def tool(
-    name: str,
-    description: str = "",
-    schema: Optional[dict] = None,
-) -> Callable:
-    """
-    Decorator to register a function as a tool.
-
-    Example:
-        @tool("read_file", description="Read contents of a file")
-        async def read_file(path: str) -> str:
-            ...
-    """
-    def decorator(func: Callable) -> Callable:
-        ToolRegistry.register(name, func, schema, description)
-        return func
-    return decorator

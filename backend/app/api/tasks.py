@@ -5,7 +5,6 @@ Endpoints for creating, reading, and managing tasks.
 """
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 import structlog
@@ -15,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.db import Task, TaskStatus, Repository, AgentLog, get_session
+from backend.app.db import Repository, Task, TaskStatus, get_session
 
 logger = structlog.get_logger()
 
@@ -35,7 +34,7 @@ class TaskCreate(BaseModel):
         description="Natural language description of the task",
         min_length=10,
     )
-    title: Optional[str] = Field(
+    title: str | None = Field(
         default=None,
         description="Optional task title",
     )
@@ -47,15 +46,15 @@ class TaskResponse(BaseModel):
     id: UUID
     repo_id: UUID
     user_request: str
-    title: Optional[str]
+    title: str | None
     status: TaskStatus
-    current_agent: Optional[str]
+    current_agent: str | None
     current_step: int
-    task_plan: Optional[dict]
-    error_message: Optional[str]
+    task_plan: dict | None
+    error_message: str | None
     created_at: datetime
     updated_at: datetime
-    completed_at: Optional[datetime]
+    completed_at: datetime | None
 
     class Config:
         from_attributes = True
@@ -72,7 +71,10 @@ class AgentLogResponse(BaseModel):
     confidence_score: float
     requires_review: bool
     created_at: datetime
-    duration_ms: Optional[int]
+    created_at: datetime
+    duration_ms: int | None
+    technical_reasoning: str | None
+    tool_calls: list[dict] | None
 
     class Config:
         from_attributes = True
@@ -127,17 +129,17 @@ async def create_task(
 
     logger.info("task_created", task_id=str(task.id))
 
-    # TODO: Dispatch to worker queue
-    # from backend.app.workers.agent_runner import run_task
-    # run_task.send(str(task.id))
+    # Dispatch to worker queue
+    from backend.app.workers.agent_runner import run_task
+    run_task.send(str(task.id))
 
     return task
 
 
 @router.get("/", response_model=list[TaskResponse])
 async def list_tasks(
-    repo_id: Optional[UUID] = None,
-    status_filter: Optional[TaskStatus] = None,
+    repo_id: UUID | None = None,
+    status_filter: TaskStatus | None = None,
     limit: int = 50,
     offset: int = 0,
     session: AsyncSession = Depends(get_session),
@@ -211,9 +213,9 @@ async def execute_task(
     task.status = TaskStatus.PLANNING
     await session.flush()
 
-    # TODO: Dispatch to worker
-    # from backend.app.workers.agent_runner import run_task
-    # run_task.send(str(task.id))
+    # Dispatch to worker
+    from backend.app.workers.agent_runner import run_task
+    run_task.send(str(task.id))
 
     logger.info("task_execution_triggered", task_id=str(task_id))
 
@@ -278,7 +280,9 @@ async def approve_task_plan(
 
     task.status = TaskStatus.EXECUTING
 
-    # TODO: Resume worker execution
+    # Resume worker execution
+    from backend.app.workers.agent_runner import resume_task
+    resume_task.send(str(task.id), approved=True)
 
     logger.info("task_plan_approved", task_id=str(task_id))
 

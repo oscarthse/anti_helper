@@ -6,7 +6,6 @@ All execution happens in resource-limited, network-isolated sandboxes.
 """
 
 import asyncio
-from typing import Optional
 
 import structlog
 
@@ -60,7 +59,7 @@ async def run_shell_command(
     command: str,
     working_directory: str = "/sandbox/project",
     timeout_seconds: int = 60,
-    env: Optional[dict[str, str]] = None,
+    env: dict[str, str] | None = None,
 ) -> dict:
     """
     Execute a command in the sandbox container.
@@ -133,7 +132,7 @@ async def run_shell_command(
             stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
             stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")
 
-        except Exception as e:
+        except Exception:
             container.kill()
             return {
                 "error": f"Command timed out after {timeout_seconds}s",
@@ -151,9 +150,17 @@ async def run_shell_command(
         }
 
     except ImportError:
-        # Docker not available - run locally (development mode)
-        logger.warning("docker_not_available", running="locally")
-        return await _run_locally(command, timeout_seconds)
+        # Docker not available - run locally ONLY if explicitly allowed
+        import os
+        if os.environ.get("UNSAFE_LOCAL_FALLBACK", "").lower() == "true":
+            logger.warning("docker_not_available_fallback_enabled", running="locally")
+            return await _run_locally(command, timeout_seconds)
+
+        logger.error("docker_not_available_security_block")
+        return {
+            "error": "CRITICAL SECURITY: Docker Sandbox unavailable. Execution aborted.",
+            "success": False,
+        }
     except Exception as e:
         logger.error("sandbox_error", error=str(e))
         return {
@@ -186,7 +193,7 @@ async def _run_locally(command: str, timeout: int) -> dict:
             "warning": "Executed locally - not in sandbox",
         }
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         return {
             "error": f"Command timed out after {timeout}s",
@@ -269,7 +276,7 @@ async def read_sandbox_logs(
 )
 async def inspect_db_schema(
     database_url: str,
-    table_name: Optional[str] = None,
+    table_name: str | None = None,
 ) -> dict:
     """
     Inspect the database schema.
@@ -279,38 +286,42 @@ async def inspect_db_schema(
     logger.info("inspect_db_schema", table=table_name)
 
     try:
-        from sqlalchemy import create_engine, inspect, text
-        from sqlalchemy.engine import URL
+        from sqlalchemy import create_engine, inspect
 
         # Parse URL and create engine
         # Note: For async compatibility, we'd use asyncpg directly
         # This is a sync fallback implementation
 
         # Security: Don't log credentials
-        engine = create_engine(database_url.replace("+asyncpg", ""))
-        inspector = inspect(engine)
+        # Custom wrapper for blocking DB inspection
+        def _inspect_sync():
+            engine = create_engine(database_url.replace("+asyncpg", ""))
+            inspector = inspect(engine)
 
-        if table_name:
-            # Inspect specific table
-            columns = inspector.get_columns(table_name)
-            pk = inspector.get_pk_constraint(table_name)
-            fks = inspector.get_foreign_keys(table_name)
-            indexes = inspector.get_indexes(table_name)
+            if table_name:
+                # Inspect specific table
+                columns = inspector.get_columns(table_name)
+                pk = inspector.get_pk_constraint(table_name)
+                fks = inspector.get_foreign_keys(table_name)
+                indexes = inspector.get_indexes(table_name)
 
-            return {
-                "table": table_name,
-                "columns": columns,
-                "primary_key": pk,
-                "foreign_keys": fks,
-                "indexes": indexes,
-            }
-        else:
-            # List all tables
-            tables = inspector.get_table_names()
-            return {
-                "tables": tables,
-                "count": len(tables),
-            }
+                return {
+                    "table": table_name,
+                    "columns": columns,
+                    "primary_key": pk,
+                    "foreign_keys": fks,
+                    "indexes": indexes,
+                }
+            else:
+                # List all tables
+                tables = inspector.get_table_names()
+                return {
+                    "tables": tables,
+                    "count": len(tables),
+                }
+
+        # Run in thread pool to avoid blocking event loop
+        return await asyncio.to_thread(_inspect_sync)
 
     except ImportError:
         return {"error": "SQLAlchemy not available"}

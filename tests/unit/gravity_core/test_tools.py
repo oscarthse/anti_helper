@@ -5,13 +5,15 @@ Tests individual tool functions for correctness, error handling,
 and edge cases.
 """
 
-import pytest
 import os
-import tempfile
-from pathlib import Path
 
 # Add project paths
 import sys
+import tempfile
+from pathlib import Path
+
+import pytest
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "libs"))
@@ -57,10 +59,13 @@ def standalone_function():
 
         result = await scan_repo_structure(str(temp_repo))
 
-        assert "src" in result or "src/" in result
-        assert "README.md" in result
+        assert result["root"] == str(temp_repo)
+        # Check simple names in tree
+        names = [item["name"] for item in result["tree"]]
+        assert "src" in names
+        assert "README.md" in names
         # .git should be excluded by default
-        assert ".git" not in result
+        assert ".git" not in names
 
     @pytest.mark.asyncio
     async def test_scan_repo_structure_with_depth(self, temp_repo):
@@ -69,8 +74,8 @@ def standalone_function():
 
         result = await scan_repo_structure(str(temp_repo), max_depth=1)
 
-        # Should include top-level items
-        assert "src" in result or "src/" in result
+        names = [item["name"] for item in result["tree"]]
+        assert "src" in names
 
     @pytest.mark.asyncio
     async def test_scan_repo_structure_nonexistent(self):
@@ -79,7 +84,7 @@ def standalone_function():
 
         result = await scan_repo_structure("/nonexistent/path/to/repo")
 
-        assert "error" in result.lower() or "not found" in result.lower()
+        assert "error" in result
 
     @pytest.mark.asyncio
     async def test_search_codebase(self, temp_repo):
@@ -88,8 +93,10 @@ def standalone_function():
 
         result = await search_codebase(str(temp_repo), "MyClass")
 
-        assert "main.py" in result
-        assert "MyClass" in result
+        # Check matches list
+        assert len(result["matches"]) > 0
+        file_paths = [m["file"] for m in result["matches"]]
+        assert "src/main.py" in file_paths or "src/main.py" in [f.replace("\\", "/") for f in file_paths]
 
     @pytest.mark.asyncio
     async def test_search_codebase_no_matches(self, temp_repo):
@@ -98,7 +105,7 @@ def standalone_function():
 
         result = await search_codebase(str(temp_repo), "NonexistentPattern12345")
 
-        assert "no matches" in result.lower() or result.strip() == ""
+        assert len(result["matches"]) == 0
 
     @pytest.mark.asyncio
     async def test_get_file_signatures(self, temp_repo):
@@ -107,9 +114,11 @@ def standalone_function():
 
         result = await get_file_signatures(str(temp_repo / "src" / "main.py"))
 
-        assert "MyClass" in result
-        assert "method" in result
-        assert "standalone_function" in result
+        assert "signatures" in result
+        sigs = result["signatures"]
+        names = [s["name"] for s in sigs]
+        assert "MyClass" in names
+        assert "standalone_function" in names
 
     @pytest.mark.asyncio
     async def test_get_file_signatures_nonexistent(self):
@@ -118,7 +127,7 @@ def standalone_function():
 
         result = await get_file_signatures("/nonexistent/file.py")
 
-        assert "error" in result.lower() or "not found" in result.lower()
+        assert "error" in result
 
 
 class TestManipulationTools:
@@ -153,10 +162,10 @@ def greet(name):
             new_content='return "Goodbye, World!"',
         )
 
+        assert result["success"] is True
         # Verify the edit was made
         content = Path(temp_file).read_text()
         assert 'return "Goodbye, World!"' in content
-        assert "diff" in result.lower() or "success" in result.lower()
 
     @pytest.mark.asyncio
     async def test_edit_file_snippet_not_found(self, temp_file):
@@ -169,7 +178,8 @@ def greet(name):
             new_content="new content",
         )
 
-        assert "not found" in result.lower() or "error" in result.lower()
+        assert result["success"] is False
+        assert "error" in result
 
     @pytest.mark.asyncio
     async def test_edit_file_snippet_multiple_matches(self, temp_file):
@@ -182,16 +192,19 @@ return True
 """)
         from gravity_core.tools.manipulation import edit_file_snippet
 
+        # Replace first occurrence (default)
         result = await edit_file_snippet(
             temp_file,
             old_content="return True",
             new_content="return False",
         )
 
-        # Should either replace all or raise ambiguity error
+        assert result["success"] is True
+        assert result["occurrences_replaced"] == 1
+
         content = Path(temp_file).read_text()
-        # The tool should handle this case - either error or replace first occurrence
-        assert "return" in content  # File still valid
+        assert "return False" in content
+        assert content.count("return True") == 2
 
     @pytest.mark.asyncio
     async def test_edit_file_nonexistent(self):
@@ -204,7 +217,8 @@ return True
             new_content="new",
         )
 
-        assert "error" in result.lower() or "not found" in result.lower()
+        assert result["success"] is False
+        assert "error" in result
 
     @pytest.mark.asyncio
     async def test_create_new_module(self):
@@ -212,6 +226,8 @@ return True
         from gravity_core.tools.manipulation import create_new_module
 
         with tempfile.TemporaryDirectory() as tmpdir:
+            # Create dummy pyproject.toml to stop recursion
+            (Path(tmpdir) / "pyproject.toml").touch()
             new_file = Path(tmpdir) / "new_package" / "module.py"
 
             result = await create_new_module(
@@ -219,6 +235,7 @@ return True
                 content='def new_function(): pass',
             )
 
+            assert result["success"] is True
             assert new_file.exists()
             assert "def new_function" in new_file.read_text()
 
@@ -237,7 +254,8 @@ class TestRuntimeTools:
 
         result = await run_shell_command("echo 'Hello, World!'")
 
-        assert "Hello, World!" in result
+        assert result["success"] is True
+        assert "Hello, World!" in result["stdout"]
 
     @pytest.mark.asyncio
     async def test_run_shell_command_failure(self):
@@ -246,8 +264,9 @@ class TestRuntimeTools:
 
         result = await run_shell_command("exit 1")
 
-        # Should indicate failure
-        assert "error" in result.lower() or "exit code" in result.lower() or "1" in result
+        # Command ran successfully (tool success) but returned exit code 1
+        assert result["success"] is False
+        assert result["exit_code"] == 1
 
     @pytest.mark.asyncio
     async def test_run_shell_command_blocked_dangerous(self):
@@ -257,19 +276,20 @@ class TestRuntimeTools:
         # Try to run rm -rf (should be blocked)
         result = await run_shell_command("rm -rf /")
 
-        assert "blocked" in result.lower() or "denied" in result.lower() or "dangerous" in result.lower()
+        assert result["success"] is False
+        assert "blocked" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_run_shell_command_timeout(self):
         """Test command timeout handling."""
         from gravity_core.tools.runtime import run_shell_command
 
-        # This test is environment-specific
-        # In real sandbox, long-running commands would timeout
+        # This test runs "echo 'quick'" with timeout 1s.
+        # It should succeed fast enough.
         result = await run_shell_command("echo 'quick'", timeout_seconds=1)
 
-        # Quick command should succeed
-        assert "quick" in result
+        assert result["success"] is True
+        assert "quick" in result["stdout"]
 
     @pytest.mark.asyncio
     async def test_read_file_outside_repo_blocked(self):
@@ -279,9 +299,8 @@ class TestRuntimeTools:
         # Attempt to read /etc/passwd
         result = await run_shell_command("cat /etc/passwd")
 
-        # This shouldn't be blocked in local mode, but sandbox would block
-        # Just ensure it doesn't crash
-        assert isinstance(result, str)
+        # In local execution (fallback), checking for success key
+        assert "success" in result
 
 
 class TestKnowledgeTools:
@@ -294,9 +313,10 @@ class TestKnowledgeTools:
 
         result = await check_dependency_version("pydantic")
 
-        assert "pydantic" in result.lower()
-        # Should contain version info
-        assert any(c.isdigit() for c in result)  # Has version numbers
+        # Returns dict
+        assert isinstance(result, dict)
+        assert result["package"] == "pydantic"
+        assert result["installed_version"] is not None
 
     @pytest.mark.asyncio
     async def test_check_dependency_version_not_installed(self):
@@ -305,7 +325,8 @@ class TestKnowledgeTools:
 
         result = await check_dependency_version("nonexistent-package-12345")
 
-        assert "not installed" in result.lower() or "not found" in result.lower() or "error" in result.lower()
+        assert isinstance(result, dict)
+        assert result["installed_version"] is None
 
 
 class TestVersionControlTools:
@@ -350,12 +371,15 @@ class TestVersionControlTools:
 
         result = await git_diff_staged(str(temp_git_repo))
 
-        assert "no changes" in result.lower() or result.strip() == ""
+        assert result["success"] is True
+        # Diff should be empty or indicate no changes
+        assert not result["diff"].strip()
 
     @pytest.mark.asyncio
     async def test_git_diff_staged_with_changes(self, temp_git_repo):
         """Test git diff with staged changes."""
         import subprocess
+
         from gravity_core.tools.version_control import git_diff_staged
 
         # Make and stage a change
@@ -364,4 +388,5 @@ class TestVersionControlTools:
 
         result = await git_diff_staged(str(temp_git_repo))
 
-        assert "new_file.py" in result or "diff" in result.lower()
+        assert result["success"] is True
+        assert "new_file.py" in result["diff"]

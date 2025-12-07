@@ -1,92 +1,160 @@
-/**
- * AgentCard Component
- *
- * Displays an agent's output with the Explainability Contract:
- * - ui_title: User-friendly action title
- * - ui_subtitle: Plain English explanation
- * - confidence_score: Visual confidence indicator
- */
+"use client"
 
-import React from 'react'
-import type { AgentOutput, AgentPersona } from '@/types/schema'
+import React, { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  Bot,
+  Code2,
+  Terminal,
+  FileText,
+  TestTube,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
+  ChevronRight
+} from 'lucide-react'
 
-const personaIcons: Record<AgentPersona, string> = {
-  planner: '📋',
-  coder_be: '💻',
-  coder_fe: '🎨',
-  coder_infra: '🔧',
-  qa: '🧪',
-  docs: '📝',
-}
+import { AgentLog, AgentPersona } from '@/types/schema'
+import { cn } from '@/lib/utils'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
 
-const personaLabels: Record<AgentPersona, string> = {
-  planner: 'Planner',
-  coder_be: 'Backend Engineer',
-  coder_fe: 'Frontend Engineer',
-  coder_infra: 'Infrastructure',
-  qa: 'QA Engineer',
-  docs: 'Documentation',
+// Persona Mapping
+const personaConfig: Record<AgentPersona, { icon: React.ReactNode; label: string; color: string }> = {
+  planner: { icon: <Bot className="h-4 w-4" />, label: 'Planner', color: 'text-indigo-400' },
+  coder_be: { icon: <Code2 className="h-4 w-4" />, label: 'Backend', color: 'text-emerald-400' },
+  coder_fe: { icon: <Code2 className="h-4 w-4" />, label: 'Frontend', color: 'text-cyan-400' },
+  coder_infra: { icon: <Terminal className="h-4 w-4" />, label: 'Infra', color: 'text-orange-400' },
+  qa: { icon: <TestTube className="h-4 w-4" />, label: 'QA', color: 'text-rose-400' },
+  docs: { icon: <FileText className="h-4 w-4" />, label: 'Docs', color: 'text-slate-400' },
 }
 
 interface AgentCardProps {
-  output: AgentOutput
-  className?: string
+  log: AgentLog
+  isLatest?: boolean
 }
 
-export function AgentCard({ output, className = '' }: AgentCardProps) {
-  const icon = personaIcons[output.agent_persona] || '🤖'
-  const label = personaLabels[output.agent_persona] || 'Agent'
+export function AgentCard({ log, isLatest = false }: AgentCardProps) {
+  const persona = personaConfig[log.agent_persona] || personaConfig.planner
 
-  const confidenceColor =
-    output.confidence_score >= 0.8 ? 'bg-green-100 text-green-800' :
-      output.confidence_score >= 0.6 ? 'bg-yellow-100 text-yellow-800' :
-        'bg-red-100 text-red-800'
+  // Visual state determination
+  let borderColor = "border-border"
+  let glowEffect = ""
+
+  // High confidence = Success
+  if (log.confidence_score >= 0.8) {
+    borderColor = "border-emerald-500/50"
+    if (isLatest) glowEffect = "shadow-[0_0_15px_rgba(16,185,129,0.15)]"
+  }
+  // Low confidence/Review = Warning
+  else if (log.requires_review) {
+    borderColor = "border-rose-500/50"
+    if (isLatest) glowEffect = "shadow-[0_0_15px_rgba(244,63,94,0.15)]"
+  }
+  // Thinking (Latest & not complete) - handled by parent logic usually, but here based on latest
+  else if (isLatest) {
+    borderColor = "border-indigo-500/50"
+    glowEffect = "shadow-[0_0_15px_rgba(99,102,241,0.15)]"
+  }
 
   return (
-    <div
-      className={`rounded-lg border bg-card p-4 shadow-sm ${className}`}
-      role="article"
-      aria-label={`Agent action: ${output.ui_title}`}
+    <motion.div
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.3, ease: "easeOut" }}
+      className="mb-4"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xl" role="img" aria-label={label}>
-            {icon}
-          </span>
-          <span className="text-sm font-medium text-muted-foreground">
-            {label}
-          </span>
+      <Card className={cn(
+        "bg-card/50 backdrop-blur-sm border transition-all duration-300",
+        borderColor,
+        glowEffect
+      )}>
+        <div className="p-4">
+          {/* Header Row */}
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className={cn("gap-1 bg-background/50", persona.color)}>
+                {persona.icon}
+                <span>{persona.label}</span>
+              </Badge>
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {new Date(log.created_at).toLocaleTimeString()}
+              </span>
+            </div>
+
+            <Badge
+              variant={log.confidence_score >= 0.8 ? "success" : log.requires_review ? "destructive" : "secondary"}
+              className="text-xs"
+            >
+              {Math.round(log.confidence_score * 100)}% Confidence
+            </Badge>
+          </div>
+
+          {/* Title & Subtitle */}
+          <div className="mb-3 space-y-1">
+            <h3 className="text-base font-semibold leading-none tracking-tight text-foreground/90">
+              {log.ui_title}
+            </h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {log.ui_subtitle}
+            </p>
+          </div>
+
+          {/* Tool Calls Summary (Mini-badges) */}
+          {log.tool_calls && log.tool_calls.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {log.tool_calls.map((tool) => (
+                <Badge key={tool.id} variant="secondary" className="text-[10px] h-5 px-1.5 font-mono text-muted-foreground">
+                  <Terminal className="h-3 w-3 mr-1" />
+                  {tool.tool_name}
+                </Badge>
+              ))}
+            </div>
+          )}
+
+          {/* Technical Details Accordion */}
+          {(log.technical_reasoning || (log.tool_calls && log.tool_calls.length > 0)) && (
+            <Accordion type="single" collapsible className="w-full">
+              <AccordionItem value="details" className="border-b-0">
+                <AccordionTrigger className="py-0 text-xs text-muted-foreground hover:text-primary hover:no-underline data-[state=open]:text-primary">
+                  <span>View Technical Details</span>
+                </AccordionTrigger>
+                <AccordionContent className="pt-3 pb-0">
+                  <div className="rounded-md bg-muted/50 p-3 font-mono text-xs text-muted-foreground overflow-x-auto">
+                    {log.technical_reasoning && (
+                      <div className="mb-3">
+                        <div className="font-semibold mb-1 text-foreground/70">Reasoning:</div>
+                        <div className="whitespace-pre-wrap">{log.technical_reasoning}</div>
+                      </div>
+                    )}
+
+                    {log.tool_calls && log.tool_calls.length > 0 && (
+                      <div>
+                        <div className="font-semibold mb-1 text-foreground/70">Tool Calls:</div>
+                        <div className="space-y-2">
+                          {log.tool_calls.map((tool, i) => (
+                            <div key={tool.id} className="border-l-2 border-border pl-2">
+                              <div className="text-primary">{tool.tool_name}</div>
+                              <pre className="mt-1 text-[10px]">{JSON.stringify(tool.arguments, null, 2)}</pre>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          )}
         </div>
-
-        <span
-          className={`px-2 py-1 rounded text-xs font-medium ${confidenceColor}`}
-          title={`Confidence: ${Math.round(output.confidence_score * 100)}%`}
-        >
-          {Math.round(output.confidence_score * 100)}%
-        </span>
-      </div>
-
-      {/* Title - The Explainability Contract */}
-      <h3 className="text-lg font-semibold mb-1" data-testid="agent-title">
-        {output.ui_title}
-      </h3>
-
-      {/* Subtitle - Plain English explanation */}
-      <p className="text-muted-foreground" data-testid="agent-subtitle">
-        {output.ui_subtitle}
-      </p>
-
-      {/* Tool calls indicator */}
-      {output.tool_calls && output.tool_calls.length > 0 && (
-        <div className="mt-3 pt-3 border-t">
-          <span className="text-xs text-muted-foreground">
-            {output.tool_calls.length} tool{output.tool_calls.length > 1 ? 's' : ''} executed
-          </span>
-        </div>
-      )}
-    </div>
+      </Card>
+    </motion.div>
   )
 }
-
-export default AgentCard

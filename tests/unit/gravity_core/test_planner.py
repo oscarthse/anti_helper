@@ -8,20 +8,21 @@ Tests the planning algorithm including:
 - Context retrieval and pattern extraction
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
-
 # Add project paths
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
+import pytest
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "libs"))
 
 from gravity_core.agents.planner import PlannerAgent
-from gravity_core.schema import AgentOutput, TaskPlan, TaskStep, AgentPersona
 from gravity_core.llm import LLMClient, LLMValidationError
+from gravity_core.schema import AgentOutput, AgentPersona, TaskPlan, TaskStep
 
 
 class TestPlannerAgentInitialization:
@@ -264,7 +265,7 @@ class TestPlannerRAGInfluence:
                     step_desc = "Update the User model with validation"
 
                 return TaskPlan(
-                    summary=f"Plan for validation",
+                    summary="Plan for validation",
                     steps=[
                         TaskStep(
                             order=1,

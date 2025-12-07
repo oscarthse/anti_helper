@@ -5,14 +5,14 @@ Tests async database sessions, connection pooling,
 and ORM operations.
 """
 
-import pytest
-import pytest_asyncio
-from uuid import uuid4
-from datetime import datetime
-
 # Add project paths
 import sys
+from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
+
+import pytest
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -163,7 +163,7 @@ class TestAgentLogModel:
     @pytest.mark.asyncio
     async def test_create_agent_log(self, db_session, sample_repository_data):
         """Test creating an agent log entry."""
-        from backend.app.db.models import Repository, Task, TaskStatus, AgentLog
+        from backend.app.db.models import AgentLog, Repository, Task, TaskStatus
 
         # Create repository and task
         repo = Repository(**sample_repository_data)
@@ -206,7 +206,7 @@ class TestAgentLogModel:
     @pytest.mark.asyncio
     async def test_agent_log_with_tool_calls(self, db_session, sample_repository_data):
         """Test agent log with tool calls JSON."""
-        from backend.app.db.models import Repository, Task, TaskStatus, AgentLog
+        from backend.app.db.models import AgentLog, Repository, Task, TaskStatus
 
         repo = Repository(**sample_repository_data)
         db_session.add(repo)
@@ -265,8 +265,9 @@ class TestDatabaseConstraints:
     @pytest.mark.asyncio
     async def test_task_requires_valid_repo(self, db_session):
         """Test that task requires existing repository."""
-        from backend.app.db.models import Task, TaskStatus
         from sqlalchemy.exc import IntegrityError
+
+        from backend.app.db.models import Task, TaskStatus
 
         task = Task(
             id=uuid4(),

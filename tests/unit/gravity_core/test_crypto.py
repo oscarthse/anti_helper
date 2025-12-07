@@ -4,13 +4,15 @@ Unit Tests for Cryptographic Utilities
 Tests encrypt_secret/decrypt_secret round-trip integrity.
 """
 
-import pytest
 import os
-from unittest.mock import patch
 
 # Add project paths
 import sys
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "libs"))
@@ -30,7 +32,7 @@ class TestCryptoRoundTrip:
 
     def test_encrypt_decrypt_round_trip(self):
         """Test that encrypt followed by decrypt returns original value."""
-        from gravity_core.utils.crypto import encrypt_secret, decrypt_secret
+        from gravity_core.utils.crypto import decrypt_secret, encrypt_secret
 
         original = "sk-abc123-secret-api-key"
 
@@ -55,7 +57,7 @@ class TestCryptoRoundTrip:
     def test_decrypt_fails_with_wrong_key(self):
         """Test that decryption fails with incorrect key."""
         from cryptography.fernet import Fernet
-        from gravity_core.utils.crypto import encrypt_secret, DecryptionError
+        from gravity_core.utils.crypto import DecryptionError, encrypt_secret
 
         original = "secret-value"
         encrypted = encrypt_secret(original)
@@ -69,14 +71,14 @@ class TestCryptoRoundTrip:
 
     def test_encrypt_empty_string_raises_error(self):
         """Test that encrypting empty string raises error."""
-        from gravity_core.utils.crypto import encrypt_secret, CryptoError
+        from gravity_core.utils.crypto import CryptoError, encrypt_secret
 
         with pytest.raises(CryptoError):
             encrypt_secret("")
 
     def test_decrypt_empty_string_raises_error(self):
         """Test that decrypting empty string raises error."""
-        from gravity_core.utils.crypto import decrypt_secret, DecryptionError
+        from gravity_core.utils.crypto import DecryptionError, decrypt_secret
 
         with pytest.raises(DecryptionError):
             decrypt_secret("")
@@ -98,7 +100,7 @@ class TestKeyNotConfigured:
 
     def test_encrypt_without_key_raises_error(self):
         """Test that encryption fails when key is not configured."""
-        from gravity_core.utils.crypto import encrypt_secret, CryptoError
+        from gravity_core.utils.crypto import CryptoError, encrypt_secret
 
         # Remove the key entirely
         original_key = os.environ.pop("ANTIGRAVITY_ENCRYPTION_KEY", None)
@@ -112,7 +114,7 @@ class TestKeyNotConfigured:
 
     def test_decrypt_without_key_raises_error(self):
         """Test that decryption fails when key is not configured."""
-        from gravity_core.utils.crypto import decrypt_secret, CryptoError
+        from gravity_core.utils.crypto import CryptoError, decrypt_secret
 
         original_key = os.environ.pop("ANTIGRAVITY_ENCRYPTION_KEY", None)
         try:

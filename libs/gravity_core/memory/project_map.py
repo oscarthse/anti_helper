@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import structlog
 
@@ -22,11 +22,11 @@ class FileInfo:
     """Information about a single file."""
 
     path: str
-    language: Optional[str] = None
+    language: str | None = None
     size: int = 0
     line_count: int = 0
-    last_modified: Optional[datetime] = None
-    content_hash: Optional[str] = None
+    last_modified: datetime | None = None
+    content_hash: str | None = None
 
     # Extracted metadata
     classes: list[str] = field(default_factory=list)
@@ -55,7 +55,7 @@ class DirectoryInfo:
     subdirectories: list[str] = field(default_factory=list)
 
     # Inferred purpose
-    purpose: Optional[str] = None  # e.g., "tests", "api", "models"
+    purpose: str | None = None  # e.g., "tests", "api", "models"
 
 
 class ProjectMap:
@@ -71,17 +71,17 @@ class ProjectMap:
         self.root_path = Path(root_path)
         self.files: dict[str, FileInfo] = {}
         self.directories: dict[str, DirectoryInfo] = {}
-        self.last_scan: Optional[datetime] = None
+        self.last_scan: datetime | None = None
 
         # Project metadata
-        self.project_type: Optional[str] = None  # python, node, etc.
-        self.framework: Optional[str] = None  # fastapi, express, etc.
+        self.project_type: str | None = None  # python, node, etc.
+        self.framework: str | None = None  # fastapi, express, etc.
         self.dependencies: list[str] = []
 
     async def scan(
         self,
         max_depth: int = 10,
-        exclude_patterns: Optional[list[str]] = None,
+        exclude_patterns: list[str] | None = None,
     ) -> "ProjectMap":
         """
         Scan the project and build the map.
@@ -218,7 +218,7 @@ class ProjectMap:
         except (SyntaxError, UnicodeDecodeError):
             pass
 
-    def _detect_language(self, suffix: str) -> Optional[str]:
+    def _detect_language(self, suffix: str) -> str | None:
         """Detect programming language from file extension."""
 
         mapping = {
@@ -251,7 +251,7 @@ class ProjectMap:
 
         return mapping.get(suffix.lower())
 
-    def _infer_purpose(self, dir_name: str) -> Optional[str]:
+    def _infer_purpose(self, dir_name: str) -> str | None:
         """Infer directory purpose from name."""
 
         purposes = {

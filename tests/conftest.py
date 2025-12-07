@@ -8,17 +8,17 @@ This module contains fixtures used across all test layers:
 """
 
 import asyncio
+
+# Add project root to path
+import sys
+from collections.abc import AsyncGenerator, Generator
 from datetime import datetime
-from typing import AsyncGenerator, Generator
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-
-# Add project root to path
-import sys
-from pathlib import Path
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))

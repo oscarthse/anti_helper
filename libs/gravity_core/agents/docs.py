@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 import structlog
 
 from gravity_core.base import BaseAgent
+from gravity_core.llm import LLMClient, LLMClientError
 from gravity_core.schema import (
     AgentOutput,
     AgentPersona,
@@ -28,7 +29,6 @@ from gravity_core.schema import (
     DocUpdateLog,
     ToolCall,
 )
-from gravity_core.llm import LLMClient, LLMClientError, LLMValidationError
 
 logger = structlog.get_logger(__name__)
 
@@ -182,7 +182,7 @@ class DocsAgent(BaseAgent):
 
     def __init__(
         self,
-        llm_client: Optional[LLMClient] = None,
+        llm_client: LLMClient | None = None,
         model_name: str = "gpt-4o",
         **kwargs: Any,
     ) -> None:
@@ -463,7 +463,7 @@ Generate the appropriate tool calls for each documentation update needed."""
         version: str,
         category: str,
         entry: str,
-    ) -> Optional[ChangeSet]:
+    ) -> ChangeSet | None:
         """Update CHANGELOG.md with a new entry."""
         today = datetime.now().strftime("%Y-%m-%d")
 
@@ -497,7 +497,7 @@ Generate the appropriate tool calls for each documentation update needed."""
             return ChangeSet(
                 file_path="CHANGELOG.md",
                 action="create",
-                diff=f"+Created CHANGELOG.md with initial entry",
+                diff="+Created CHANGELOG.md with initial entry",
                 explanation=f"Created changelog with {category.lower()} entry",
             )
 
@@ -509,7 +509,7 @@ Generate the appropriate tool calls for each documentation update needed."""
         section: str,
         action: str,
         content: str,
-    ) -> Optional[ChangeSet]:
+    ) -> ChangeSet | None:
         """Update a section of README.md."""
         # Find the section in README
         search_result = await self.call_tool(
@@ -558,7 +558,7 @@ Generate the appropriate tool calls for each documentation update needed."""
         file_path: str,
         symbol_name: str,
         docstring: str,
-    ) -> Optional[ChangeSet]:
+    ) -> ChangeSet | None:
         """Add or update a docstring for a function/class."""
         full_path = f"{repo_path}/{file_path}" if not file_path.startswith("/") else file_path
 
@@ -629,9 +629,9 @@ Generate the appropriate tool calls for each documentation update needed."""
         if "CHANGELOG.md" in files and "README.md" in files:
             return f"Updated {count} documentation file(s) including CHANGELOG and README."
         elif "CHANGELOG.md" in files:
-            return f"Added changelog entry for the recent changes."
+            return "Added changelog entry for the recent changes."
         elif "README.md" in files:
-            return f"Updated README to reflect the new functionality."
+            return "Updated README to reflect the new functionality."
         else:
             return f"Improved documentation in {count} file(s)."
 

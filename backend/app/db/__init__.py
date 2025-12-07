@@ -1,6 +1,6 @@
 """Database package."""
 
-from backend.app.db.models import Base, Task, TaskStatus, Repository, AgentLog, ChangeSet
+from backend.app.db.models import AgentLog, Base, ChangeSet, Repository, Task, TaskStatus
 from backend.app.db.session import get_session, init_db
 
 __all__ = [

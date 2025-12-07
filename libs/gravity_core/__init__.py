@@ -5,17 +5,17 @@ A custom library for multi-agent AI development with structured output
 and deep context management.
 """
 
-from gravity_core.schema import (
-    AgentOutput,
-    ToolCall,
-    TaskPlan,
-    ChangeSet,
-    ExecutionRun,
-    DocUpdateLog,
-    AgentPersona,
-)
 from gravity_core.base import BaseAgent
 from gravity_core.llm import LLMClient, LLMClientError, LLMValidationError
+from gravity_core.schema import (
+    AgentOutput,
+    AgentPersona,
+    ChangeSet,
+    DocUpdateLog,
+    ExecutionRun,
+    TaskPlan,
+    ToolCall,
+)
 
 __version__ = "0.1.0"
 

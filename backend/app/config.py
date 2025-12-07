@@ -5,7 +5,6 @@ Settings management using Pydantic Settings.
 """
 
 from functools import lru_cache
-from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -26,8 +25,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # LLM Providers
-    openai_api_key: Optional[str] = None
-    google_api_key: Optional[str] = None
+    openai_api_key: str | None = None
+    google_api_key: str | None = None
     default_llm_provider: str = "openai"
     default_llm_model: str = "gpt-4o"
 

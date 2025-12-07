@@ -8,13 +8,9 @@ Usage:
     python backend/scripts/sync_schema.py
 """
 
-import json
-import subprocess
 import sys
-import tempfile
 from datetime import datetime
 from pathlib import Path
-
 
 # =============================================================================
 # Configuration
@@ -61,14 +57,14 @@ def get_gravity_core_json_schema() -> dict:
     try:
         from gravity_core.schema import (
             AgentOutput,
-            ToolCall,
-            TaskPlan,
-            TaskStep,
-            ChangeSet,
-            ExecutionRun,
-            DocUpdateLog,
-            TaskStatus,
             AgentPersona,
+            ChangeSet,
+            DocUpdateLog,
+            ExecutionRun,
+            TaskPlan,
+            TaskStatus,
+            TaskStep,
+            ToolCall,
         )
 
         # Build combined schema with all models
@@ -102,8 +98,8 @@ def get_gravity_core_json_schema() -> dict:
             "enum": [p.value for p in AgentPersona],
             "description": "Agent persona types"
         }
-        print(f"  ✓ TaskStatus (enum)")
-        print(f"  ✓ AgentPersona (enum)")
+        print("  ✓ TaskStatus (enum)")
+        print("  ✓ AgentPersona (enum)")
 
         return schemas
 

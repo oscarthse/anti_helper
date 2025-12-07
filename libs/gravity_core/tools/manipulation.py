@@ -5,11 +5,8 @@ These tools allow agents to surgically edit code, create new modules,
 and run code formatting/linting.
 """
 
-import os
-import re
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 import structlog
 

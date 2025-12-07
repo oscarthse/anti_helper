@@ -5,7 +5,7 @@ All database access must use async sessions (async/await).
 Never use synchronous blocking calls.
 """
 
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,

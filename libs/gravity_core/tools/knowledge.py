@@ -5,7 +5,6 @@ These tools allow agents to search documentation, scrape web content,
 and verify dependency versions to prevent outdated syntax.
 """
 
-from typing import Optional
 
 import httpx
 import structlog
@@ -42,7 +41,7 @@ logger = structlog.get_logger()
 )
 async def web_search_docs(
     query: str,
-    library: Optional[str] = None,
+    library: str | None = None,
     max_results: int = 5,
 ) -> dict:
     """

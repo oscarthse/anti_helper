@@ -5,7 +5,6 @@ Endpoints for registering and managing repositories.
 """
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 import structlog
@@ -31,7 +30,7 @@ class RepoCreate(BaseModel):
 
     name: str = Field(description="Display name for the repository")
     path: str = Field(description="Absolute path to the repository")
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional description",
     )
@@ -43,9 +42,9 @@ class RepoResponse(BaseModel):
     id: UUID
     name: str
     path: str
-    description: Optional[str]
-    project_type: Optional[str]
-    framework: Optional[str]
+    description: str | None
+    project_type: str | None
+    framework: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -56,8 +55,8 @@ class RepoResponse(BaseModel):
 class RepoScanResult(BaseModel):
     """Result of scanning a repository."""
 
-    project_type: Optional[str]
-    framework: Optional[str]
+    project_type: str | None
+    framework: str | None
     file_count: int
     directory_count: int
 
