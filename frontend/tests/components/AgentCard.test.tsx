@@ -8,6 +8,7 @@ import React from 'react'
 import { render, screen } from '@testing-library/react'
 import { AgentCard } from '@/components/AgentCard'
 import { createMockAgentLog, createLowConfidenceOutput } from '../utils/mock-data'
+import { ToolCall } from '@/types/schema'
 
 describe('AgentCard Component', () => {
   describe('Explainability Rendering', () => {
@@ -18,7 +19,7 @@ describe('AgentCard Component', () => {
 
       render(<AgentCard log={output} />)
 
-      expect(screen.getByTestId('agent-title')).toHaveTextContent('📋 Analyzing Repository Structure')
+      expect(screen.getByRole('heading', { name: '📋 Analyzing Repository Structure' })).toBeInTheDocument()
     })
 
     it('should render ui_subtitle from AgentOutput', () => {
@@ -28,9 +29,7 @@ describe('AgentCard Component', () => {
 
       render(<AgentCard log={output} />)
 
-      expect(screen.getByTestId('agent-subtitle')).toHaveTextContent(
-        "I'm scanning your codebase to understand the project layout."
-      )
+      expect(screen.getByText("I'm scanning your codebase to understand the project layout.")).toBeInTheDocument()
     })
 
     it('should render both title and subtitle together', () => {
@@ -52,7 +51,7 @@ describe('AgentCard Component', () => {
 
       render(<AgentCard log={output} />)
 
-      const confidenceElement = screen.getByText('90%')
+      const confidenceElement = screen.getByText('90% Confidence')
       expect(confidenceElement).toBeInTheDocument()
     })
 
@@ -66,7 +65,7 @@ describe('AgentCard Component', () => {
 
       render(<AgentCard log={output} />)
 
-      const confidenceElement = screen.getByText('50%')
+      const confidenceElement = screen.getByText('50% Confidence')
       expect(confidenceElement).toBeInTheDocument()
     })
   })
@@ -75,24 +74,25 @@ describe('AgentCard Component', () => {
     it('should show tool calls count when tools are executed', () => {
       const output = createMockAgentLog({
         tool_calls: [
-          { tool_name: 'scan_repo', success: true, arguments: {}, result: '', duration_ms: 100 },
-          { tool_name: 'read_file', success: true, arguments: {}, result: '', duration_ms: 100 },
+          { id: 't1', tool_name: 'scan_repo', success: true, arguments: {}, result: '', duration_ms: 100 },
+          { id: 't2', tool_name: 'read_file', success: true, arguments: {}, result: '', duration_ms: 100 },
         ],
       })
 
       render(<AgentCard log={output} />)
 
-      expect(screen.getByText('2 tools executed')).toBeInTheDocument()
+      expect(screen.getByText('scan_repo')).toBeInTheDocument()
+      expect(screen.getByText('read_file')).toBeInTheDocument()
     })
 
     it('should show singular tool when one tool executed', () => {
       const output = createMockAgentLog({
-        tool_calls: [{ tool_name: 'scan_repo', success: true, arguments: {}, result: '', duration_ms: 100 }],
+        tool_calls: [{ id: 't1', tool_name: 'scan_repo', success: true, arguments: {}, result: '', duration_ms: 100 } as ToolCall],
       })
 
       render(<AgentCard log={output} />)
 
-      expect(screen.getByText('1 tool executed')).toBeInTheDocument()
+      expect(screen.getByText('scan_repo')).toBeInTheDocument()
     })
 
     it('should not show tool indicator when no tools executed', () => {

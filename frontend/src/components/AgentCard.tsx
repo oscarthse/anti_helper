@@ -14,7 +14,7 @@ import {
   ChevronRight
 } from 'lucide-react'
 
-import { AgentLog, AgentPersona } from '@/types/schema'
+import { AgentLog, AgentPersona, ToolCall } from '@/types/schema'
 import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -41,7 +41,7 @@ interface AgentCardProps {
 }
 
 export function AgentCard({ log, isLatest = false }: AgentCardProps) {
-  const persona = personaConfig[log.agent_persona] || personaConfig.planner
+  const persona = personaConfig[log.agent_persona as AgentPersona] || personaConfig.planner
 
   // Visual state determination
   let borderColor = "border-border"
@@ -70,11 +70,14 @@ export function AgentCard({ log, isLatest = false }: AgentCardProps) {
       transition={{ duration: 0.3, ease: "easeOut" }}
       className="mb-4"
     >
-      <Card className={cn(
-        "bg-card/50 backdrop-blur-sm border transition-all duration-300",
-        borderColor,
-        glowEffect
-      )}>
+      <Card
+        role="article"
+        aria-label={`Agent action: ${log.ui_title}`}
+        className={cn(
+          "bg-card/50 backdrop-blur-sm border transition-all duration-300",
+          borderColor,
+          glowEffect
+        )}>
         <div className="p-4">
           {/* Header Row */}
           <div className="flex items-center justify-between mb-2">
@@ -110,7 +113,7 @@ export function AgentCard({ log, isLatest = false }: AgentCardProps) {
           {/* Tool Calls Summary (Mini-badges) */}
           {log.tool_calls && log.tool_calls.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-3">
-              {log.tool_calls.map((tool) => (
+              {log.tool_calls.map((tool: ToolCall) => (
                 <Badge key={tool.id} variant="secondary" className="text-[10px] h-5 px-1.5 font-mono text-muted-foreground">
                   <Terminal className="h-3 w-3 mr-1" />
                   {tool.tool_name}
@@ -139,7 +142,7 @@ export function AgentCard({ log, isLatest = false }: AgentCardProps) {
                       <div>
                         <div className="font-semibold mb-1 text-foreground/70">Tool Calls:</div>
                         <div className="space-y-2">
-                          {log.tool_calls.map((tool, i) => (
+                          {log.tool_calls.map((tool: ToolCall, i) => (
                             <div key={tool.id} className="border-l-2 border-border pl-2">
                               <div className="text-primary">{tool.tool_name}</div>
                               <pre className="mt-1 text-[10px]">{JSON.stringify(tool.arguments, null, 2)}</pre>
