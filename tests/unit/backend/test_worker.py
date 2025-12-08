@@ -24,6 +24,8 @@ class TestWorkerOrchestration:
         """Create a mock database session."""
         session = MagicMock()
         session.commit = AsyncMock()
+        session.flush = AsyncMock()
+        session.refresh = AsyncMock()
         session.add = MagicMock()
         session.execute = AsyncMock()
         return session
@@ -227,28 +229,35 @@ class TestLogAgentOutput:
 
         mock_session = MagicMock()
         mock_session.add = MagicMock()
+        mock_session.flush = AsyncMock()  # Must be async now
 
-        output = AgentOutput(
-            ui_title="Test Title",
-            ui_subtitle="Test Subtitle",
-            technical_reasoning="Test reasoning",
-            tool_calls=[],
-            confidence_score=0.9,
-            agent_persona=AgentPersona.PLANNER,
-        )
+        # Mock get_event_bus
+        with patch('backend.app.core.events.get_event_bus') as mock_get_bus:
+            mock_bus = MagicMock()
+            mock_bus.publish_task_event = AsyncMock()
+            mock_get_bus.return_value = mock_bus
 
-        await log_agent_output(
-            session=mock_session,
-            task_id=uuid4(),
-            agent_output=output,
-            step_number=0,
-        )
+            output = AgentOutput(
+                ui_title="Test Title",
+                ui_subtitle="Test Subtitle",
+                technical_reasoning="Test reasoning",
+                tool_calls=[],
+                confidence_score=0.9,
+                agent_persona=AgentPersona.PLANNER,
+            )
 
-        # Assert that session.add was called with an AgentLog
-        mock_session.add.assert_called_once()
-        added_entry = mock_session.add.call_args[0][0]
-        assert added_entry.ui_title == "Test Title"
-        assert added_entry.confidence_score == 0.9
+            await log_agent_output(
+                session=mock_session,
+                task_id=uuid4(),
+                agent_output=output,
+                step_number=0,
+            )
+
+            # Assert that session.add was called with an AgentLog
+            mock_session.add.assert_called_once()
+            added_entry = mock_session.add.call_args[0][0]
+            assert added_entry.ui_title == "Test Title"
+            assert added_entry.confidence_score == 0.9
 
 
 class TestTaskNotFound:
@@ -259,15 +268,10 @@ class TestTaskNotFound:
         """Test that worker exits gracefully when task not found."""
         from backend.app.workers.agent_runner import _run_task_async
 
-        with patch('backend.app.workers.agent_runner.worker_session_factory') as mock_factory:
-            mock_session = MagicMock()
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=None)
-            mock_factory.return_value = mock_session
+        # Mock database engine and session factory
+        with patch('backend.app.workers.agent_runner._create_worker_engine', AsyncMock()), \
+             patch('backend.app.workers.agent_runner.async_sessionmaker') as mock_factory:
 
-            with patch('backend.app.workers.agent_runner._get_task',
-                       AsyncMock(return_value=None)):
-                # Should not raise - exits gracefully
                 await _run_task_async("non-existent-id")
 
 
@@ -283,12 +287,14 @@ class TestResumeTask:
         mock_task = MagicMock()
         mock_task.status = TaskStatus.PLAN_REVIEW
 
-        with patch('backend.app.workers.agent_runner.worker_session_factory') as mock_factory:
+        with patch('backend.app.workers.agent_runner._create_worker_engine', AsyncMock()), \
+             patch('backend.app.workers.agent_runner.async_sessionmaker') as mock_factory:
+
             mock_session = MagicMock()
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock(return_value=None)
             mock_session.commit = AsyncMock()
-            mock_factory.return_value = mock_session
+            mock_factory.return_value.return_value = mock_session
 
             with patch('backend.app.workers.agent_runner._get_task',
                        AsyncMock(return_value=mock_task)):
@@ -306,12 +312,14 @@ class TestResumeTask:
         mock_task = MagicMock()
         mock_task.status = TaskStatus.PLAN_REVIEW
 
-        with patch('backend.app.workers.agent_runner.worker_session_factory') as mock_factory:
+        with patch('backend.app.workers.agent_runner._create_worker_engine', AsyncMock()), \
+             patch('backend.app.workers.agent_runner.async_sessionmaker') as mock_factory:
+
             mock_session = MagicMock()
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock(return_value=None)
             mock_session.commit = AsyncMock()
-            mock_factory.return_value = mock_session
+            mock_factory.return_value.return_value = mock_session
 
             with patch('backend.app.workers.agent_runner._get_task',
                        AsyncMock(return_value=mock_task)):

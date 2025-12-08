@@ -193,7 +193,8 @@ class TestMissionLifecycle:
         # WHEN: We write a file
         file_content = "print('success')"
         relative_path = "hello.py"
-        absolute_path = engine.write_file(relative_path, file_content)
+        verified_action = engine.write_file(relative_path, file_content)
+        absolute_path = verified_action.path
 
         # THEN: The file MUST exist on disk (Reality Check)
         assert os.path.exists(absolute_path), \
@@ -557,10 +558,11 @@ class TestMissionLifecycle:
 
             # Write the file directly (simulating what CoderAgent would do)
             engine = RealityEngine(str(temp_repo))
-            written_path = engine.write_file(
+            verified_action = engine.write_file(
                 "mission_output.py",
                 "# Mission accomplished\nprint('success')"
             )
+            written_path = verified_action.path
 
             # --- PHASE 3: Verification - The Three Pillars ---
 
