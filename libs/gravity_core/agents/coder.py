@@ -15,12 +15,14 @@ Key Responsibilities:
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 import structlog
 
 from gravity_core.base import BaseAgent
+from gravity_core.guardrails.linter import GravityLinter
 from gravity_core.llm import LLMClient, LLMClientError, LLMValidationError
 from gravity_core.schema import (
     AgentOutput,
@@ -277,6 +279,7 @@ class CoderAgent(BaseAgent):
         self.model_name = model_name
         self.llm_client = llm_client or LLMClient()
         self._changes: list[ChangeSet] = []
+        self.linter = GravityLinter(strict_deps=True)
 
         # Set persona based on specialty
         if specialty == "frontend" or specialty == "fe":
@@ -490,12 +493,84 @@ Write production-ready code that would pass a senior engineer's code review."""
         arguments = tool_call.get("arguments", {})
 
         if tool_name == "edit_file_snippet":
+            # -----------------------------------------------------------------
+            # SYMBOLIC GUARDRAIL: Pre-computation & Validation
+            # -----------------------------------------------------------------
+            file_path = f"{repo_path}/{arguments.get('file_path', '')}"
+            old_code = arguments.get("original_code", "")
+            new_code = arguments.get("new_code", "")
+
+            # 1. Read original file
+            try:
+                original_content = Path(file_path).read_text()
+            except Exception as e:
+                # Let the tool handle execution failure, or fail early here
+                logger.warning("linter_read_failed", file=file_path, error=str(e))
+                # For safety, we can fail early or proceed.
+                # If we can't read, we can't lint. Proceeding risks writing blind,
+                # but let's trust the tool to handle I/O errors.
+                # However, we CANNOT validate.
+                pass
+            else:
+                # 2. Simulate Patch (simplified replacement for validation)
+                # Note: The actual tool handles 'occurrence', but for validation
+                # we'll assume a simple replace or check if old_code exists.
+                # This logic mimics the tool's behavior roughly for validation purposes.
+                occurrence = arguments.get("occurrence", 1)
+
+                # Verify old_code exists
+                count = original_content.count(old_code)
+                if count > 0:
+                     # Simulate specific replacement (logic matched from manipulation.py)
+                    if occurrence == 0:
+                        proposed_content = original_content.replace(old_code, new_code)
+                    else:
+                        # Find nth occurrence
+                        idx = -1
+                        found = True
+                        for _ in range(occurrence):
+                            idx = original_content.find(old_code, idx + 1)
+                            if idx == -1:
+                                found = False
+                                break
+
+                        if found:
+                            proposed_content = (
+                                original_content[:idx] +
+                                new_code +
+                                original_content[idx + len(old_code):]
+                            )
+                        else:
+                            # Context mismatch - tool will fail, so let it proceed to fail
+                            proposed_content = None
+
+                    # 3. Deterministic Linter Check
+                    if proposed_content and file_path.endswith(".py"):
+                        lint_result = self.linter.validate(proposed_content, file_path)
+
+                        if not lint_result.success:
+                            # CRITICAL: Intercept and Block
+                            failure_msg = f"GravityLinter Blocked Write: {lint_result.error}"
+                            logger.error("linter_blocked_write", file=file_path, error=lint_result.error)
+
+                            # Synthesize a failed ToolCall
+                            from gravity_core.schema import ToolCall
+                            self._tool_calls.append(ToolCall(
+                                tool_name=tool_name,
+                                arguments=arguments,
+                                success=False,
+                                error=failure_msg,
+                                duration_ms=0
+                            ))
+                            return # FAIL FAST - Do not execute tool
+
             # Execute the edit
             result = await self.call_tool(
                 "edit_file_snippet",
-                path=f"{repo_path}/{arguments.get('file_path', '')}",
-                original=arguments.get("original_code", ""),
-                replacement=arguments.get("new_code", ""),
+                path=file_path,
+                original=old_code,
+                replacement=new_code,
+                occurrence=arguments.get("occurrence", 1),
             )
 
             if result.success:
@@ -521,10 +596,35 @@ Write production-ready code that would pass a senior engineer's code review."""
                 )
 
         elif tool_name == "create_new_module":
+            # -----------------------------------------------------------------
+            # SYMBOLIC GUARDRAIL: Pre-computation & Validation
+            # -----------------------------------------------------------------
+            file_path = f"{repo_path}/{arguments.get('file_path', '')}"
+            content = arguments.get("content", "")
+
+            if file_path.endswith(".py"):
+                lint_result = self.linter.validate(content, file_path)
+
+                if not lint_result.success:
+                    # CRITICAL: Intercept and Block
+                    failure_msg = f"GravityLinter Blocked Creation: {lint_result.error}"
+                    logger.error("linter_blocked_create", file=file_path, error=lint_result.error)
+
+                    # Synthesize a failed ToolCall
+                    from gravity_core.schema import ToolCall
+                    self._tool_calls.append(ToolCall(
+                        tool_name=tool_name,
+                        arguments=arguments,
+                        success=False,
+                        error=failure_msg,
+                        duration_ms=0
+                    ))
+                    return # FAIL FAST
+
             result = await self.call_tool(
                 "create_new_module",
-                path=f"{repo_path}/{arguments.get('file_path', '')}",
-                content=arguments.get("content", ""),
+                path=file_path,
+                content=content,
             )
 
             if result.success:

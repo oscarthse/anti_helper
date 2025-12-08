@@ -31,10 +31,13 @@ export class APIError extends Error {
 /**
  * Fetch a list of tasks
  */
-export async function fetchTasks(repoId?: string): Promise<Task[]> {
+export async function fetchTasks(repoId?: string, parentTaskId?: string): Promise<Task[]> {
   const url = new URL(`${API_BASE_URL}/api/tasks/`)
   if (repoId) {
     url.searchParams.set('repo_id', repoId)
+  }
+  if (parentTaskId) {
+    url.searchParams.set('parent_task_id', parentTaskId)
   }
 
   const response = await fetch(url.toString(), { cache: 'no-store' })
@@ -85,6 +88,22 @@ export async function createTask(repoId: string, userRequest: string): Promise<T
     const error = await response.json()
     throw new APIError(
       error.detail || 'Failed to create task',
+      response.status,
+    )
+  }
+
+  return response.json()
+}
+
+/**
+ * Fetch file tree for a repository
+ */
+export async function fetchFileTree(repoId: string): Promise<any[]> {
+  const response = await fetch(`${API_BASE_URL}/api/files/tree?repo_id=${repoId}`, { cache: 'no-store' })
+
+  if (!response.ok) {
+    throw new APIError(
+      'Failed to fetch file tree',
       response.status,
     )
   }
@@ -146,6 +165,53 @@ export async function rejectTaskPlan(taskId: string, feedback: string): Promise<
       error.detail || 'Failed to reject task plan',
       response.status,
     )
+  }
+}
+
+/**
+ * Pause task execution
+ */
+export async function pauseTask(taskId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/pause`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store'
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new APIError(error.detail || 'Failed to pause task', response.status)
+  }
+}
+
+/**
+ * Resume task execution
+ */
+export async function resumeTask(taskId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/resume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store'
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new APIError(error.detail || 'Failed to resume task', response.status)
+  }
+}
+
+/**
+ * Delete a mission
+ */
+export async function deleteTask(taskId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
+    method: 'DELETE',
+    cache: 'no-store'
+  })
+
+  if (!response.ok) {
+    // 204 No Content is OK
+    throw new APIError('Failed to delete task', response.status)
   }
 }
 

@@ -98,19 +98,24 @@ async def edit_file_snippet(
 
     # Write the modified content
     try:
-        file_path.write_text(modified)
-    except Exception as e:
-        return {"error": f"Could not write file: {e}", "success": False}
+        file_path.write_text(modified, encoding="utf-8")
 
-    # Generate diff
-    diff = _generate_diff(original, modified, path)
+        # SLEDGEHAMMER VERIFICATION
+        if not file_path.exists():
+             raise RuntimeError(f"CRITICAL: Edit failed. {file_path} disappeared from disk.")
+
+        if len(modified) > 0 and file_path.stat().st_size == 0:
+             raise RuntimeError(f"CRITICAL: Wrote 0 bytes to {file_path} during edit.")
+
+    except Exception as e:
+        return {"error": f"Could not save file: {e}", "success": False}
 
     return {
         "success": True,
-        "path": path,
-        "occurrences_found": count,
-        "occurrences_replaced": replaced_count,
-        "diff": diff,
+         # Return absolute path
+        "path": str(file_path.absolute()),
+        "diff": _generate_diff(original, modified, path),
+        "replaced_count": replaced_count,
     }
 
 
@@ -218,13 +223,24 @@ async def create_new_module(
 
     # Write the file
     try:
-        file_path.write_text(content)
+        file_path.write_text(content, encoding="utf-8")
+
+        # SLEDGEHAMMER VERIFICATION (Protocol Code Red)
+        # 1. Reality Check
+        if not file_path.exists():
+            raise RuntimeError(f"CRITICAL: Write operation failed. {file_path} does not exist on disk.")
+
+        # 2. Size Check
+        written_size = file_path.stat().st_size
+        if len(content) > 0 and written_size == 0:
+            raise RuntimeError(f"CRITICAL: Wrote 0 bytes to {file_path} but content was not empty. File system may be mocked or corrupted.")
+
     except Exception as e:
         return {"error": f"Could not write file: {e}", "success": False}
 
     return {
         "success": True,
-        "path": path,
+        "path": str(file_path.absolute()),
         "size": len(content),
         "init_files_created": init_files_created,
     }

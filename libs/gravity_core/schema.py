@@ -137,6 +137,7 @@ class AgentOutput(BaseModel):
 class TaskStep(BaseModel):
     """A single step in a task plan."""
 
+    step_id: str = Field(description="Unique string ID for graph reference (e.g., 'step-1')")
     order: int = Field(description="Execution order (1-indexed)")
     description: str = Field(description="What this step accomplishes")
     agent_persona: AgentPersona = Field(description="Which agent should execute this")
@@ -144,9 +145,13 @@ class TaskStep(BaseModel):
         default=None,
         description="Estimated LLM tokens for this step"
     )
+    depends_on: list[str] = Field(
+        default_factory=list,
+        description="List of step_ids that must complete first"
+    )
     dependencies: list[int] = Field(
         default_factory=list,
-        description="Step numbers this step depends on"
+        description="Deprecated: Step numbers this step depends on"
     )
     files_affected: list[str] = Field(
         default_factory=list,

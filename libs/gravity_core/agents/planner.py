@@ -56,12 +56,17 @@ Each step must be a single, verifiable action:
 - ❌ "Update the user system" (too vague)
 - ❌ "Add validation and tests" (multiple actions)
 
-### 2. Sequential Dependencies
-Steps must respect logical order:
-1. ORM model changes before API route changes
-2. Schema definitions before endpoint implementations
-3. Core logic before tests
-4. Implementation before documentation
+### 2. Sequential & Parallel Dependencies (DAG)
+Your plan is a Directed Acyclic Graph (DAG), NOT just a list.
+- Assign a unique `step_id` to each step (e.g., "db_migration", "api_schema").
+- Explicitly list `depends_on` for every step.
+- Steps with no dependencies can run in parallel.
+- Steps with dependencies must wait for their blockers.
+
+Example:
+- Step 1 (`db_schema`): Create tables. depends_on=[]
+- Step 2 (`backend_api`): Create API. depends_on=["db_schema"]
+- Step 3 (`frontend_ui`): Create UI. depends_on=["backend_api"]
 
 ### 3. Agent Assignment
 Assign each step to the correct specialist:

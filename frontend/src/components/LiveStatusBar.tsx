@@ -17,16 +17,27 @@ import {
   TestTube,
   BookOpen,
   Wrench,
-  Bot
+  Bot,
+  Activity,
+  Wifi,
+  WifiOff,
+  Terminal,
+  Play
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { Task, TaskPlan, TaskStep } from '@/types/schema'
+import type { Task, TaskPlan, TaskStep, AgentLog } from '@/types/schema'
 
 interface LiveStatusBarProps {
   task: Task
-  taskPlan: TaskPlan | null
-  currentStep: number
+  status: string
+  step?: number
+  agent: string
+  logs: AgentLog[]
   isConnected: boolean
+  onPause: () => Promise<void>
+  onResume: () => Promise<void>
+  isPausing: boolean
+  isResuming: boolean
 }
 
 const statusConfig: Record<string, {
@@ -91,8 +102,24 @@ const agentIcons: Record<string, React.ReactNode> = {
   docs: <BookOpen className="w-3.5 h-3.5" />,
 }
 
-export function LiveStatusBar({ task, taskPlan, currentStep, isConnected }: LiveStatusBarProps) {
-  const status = statusConfig[task.status] || statusConfig.pending
+export function LiveStatusBar({
+  task,
+  status,
+  step = 0,
+  agent,
+  logs,
+  isConnected,
+  onPause,
+  onResume,
+  isPausing,
+  isResuming
+}: LiveStatusBarProps) {
+
+  // Backwards compatibility alias if component uses currentStep internally
+  const currentStep = step;
+  const taskPlan = task.task_plan as unknown as TaskPlan | null;
+
+  const currentStatusConfig = statusConfig[status] || statusConfig.pending
   const totalSteps = taskPlan?.steps?.length || 0
   const currentStepData = taskPlan?.steps?.find(s => s.order === currentStep)
   const progress = totalSteps > 0 ? Math.round((currentStep / totalSteps) * 100) : 0
@@ -100,24 +127,45 @@ export function LiveStatusBar({ task, taskPlan, currentStep, isConnected }: Live
   return (
     <div className={cn(
       "px-4 py-3 border-b border-slate-800 transition-all",
-      status.bgColor
+      currentStatusConfig.bgColor
     )}>
       {/* Main Status Row */}
       <div className="flex items-center gap-3">
         {/* Status Icon */}
         <div className={cn(
           "flex-shrink-0",
-          status.color,
-          status.animate && "animate-pulse"
+          currentStatusConfig.color,
+          currentStatusConfig.animate && "animate-pulse"
         )}>
-          {status.animate ? <Loader2 className="w-5 h-5 animate-spin" /> : status.icon}
+          {currentStatusConfig.animate ? <Loader2 className="w-5 h-5 animate-spin" /> : currentStatusConfig.icon}
         </div>
 
-        {/* Status Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className={cn("font-medium text-sm", status.color)}>
-              {status.label}
+        {/* Right: Pause/Resume & Connection */}
+        <div className="flex items-center gap-4">
+          {/* Play/Pause Control */}
+          {status === 'paused' ? (
+            <button
+              onClick={onResume}
+              disabled={isResuming}
+              className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-md transition-colors text-xs font-medium"
+            >
+              {isResuming ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+              RESUME MISSION
+            </button>
+          ) : (
+            <button
+              onClick={onPause}
+              disabled={isPausing || status === 'completed' || status === 'failed'}
+              className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded-md transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isPausing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Pause className="h-3 w-3" />}
+              PAUSE
+            </button>
+          )}
+
+          <div className="flex items-center gap-2 px-3 py-1 bg-slate-800 rounded-full border border-slate-700">
+            <span className={cn("font-medium text-sm", currentStatusConfig.color)}>
+              {currentStatusConfig.label}
             </span>
 
             {/* Step Counter */}
@@ -129,7 +177,7 @@ export function LiveStatusBar({ task, taskPlan, currentStep, isConnected }: Live
           </div>
 
           {/* Current Step Description */}
-          {currentStepData && task.status === 'executing' && (
+          {currentStepData && status === 'executing' && (
             <div className="flex items-center gap-2 mt-1">
               <span className="text-slate-500">
                 {agentIcons[currentStepData.agent_persona] || <Bot className="w-3.5 h-3.5" />}
@@ -141,7 +189,7 @@ export function LiveStatusBar({ task, taskPlan, currentStep, isConnected }: Live
           )}
 
           {/* Error Message */}
-          {task.error_message && (
+          {task?.error_message && (
             <div className="mt-1 text-xs text-red-400 truncate">
               ⚠️ {task.error_message}
             </div>

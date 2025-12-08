@@ -28,6 +28,46 @@ class Base(DeclarativeBase):
     pass
 
 
+class TaskDependency(Base):
+    """
+    DAG Edges: Represents a 'Blocker' relationship.
+
+    blocker_task_id MUST be completed before blocked_task_id can proceed.
+    """
+    __tablename__ = "task_dependencies"
+
+    blocker_task_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tasks.id"), primary_key=True)
+    blocked_task_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tasks.id"), primary_key=True)
+
+    # Metadata for the edge
+    reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class KnowledgeNode(Base):
+    """
+    The Blackboard: Semantic State Persistence.
+
+    Represents a unit of knowledge (Fact, Schema, Decision) tied to a Task.
+    Nodes form a knowledge graph that child tasks can inherit.
+    """
+    __tablename__ = "knowledge_nodes"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    task_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tasks.id"), nullable=False)
+
+    key: Mapped[str] = mapped_column(String(255), nullable=False)
+    value: Mapped[dict] = mapped_column(JSON, nullable=False)
+    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationship
+    task: Mapped["Task"] = relationship("Task", back_populates="knowledge_nodes")
+
+
+
 class TaskStatus(str, enum.Enum):
     """State machine for task execution."""
 
@@ -40,6 +80,7 @@ class TaskStatus(str, enum.Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     REVIEW_REQUIRED = "review_required"
+    PAUSED = "paused"
 
 
 class Repository(Base):
@@ -106,6 +147,11 @@ class Task(Base):
         ForeignKey("repositories.id"),
         nullable=False,
     )
+    parent_task_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("tasks.id"),
+        nullable=True,
+    )
 
     # Task definition
     user_request: Mapped[str] = mapped_column(Text, nullable=False)
@@ -139,7 +185,12 @@ class Task(Base):
         onupdate=datetime.utcnow,
         nullable=False,
     )
+    last_heartbeat: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Contract / Definition of Done
+    definition_of_done: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    retry_count: Mapped[int] = mapped_column(default=0)
 
     # Relationships
     repository: Mapped["Repository"] = relationship(
@@ -151,6 +202,25 @@ class Task(Base):
         back_populates="task",
         cascade="all, delete-orphan",
         order_by="AgentLog.created_at",
+    )
+
+    # Recursion
+    subtasks: Mapped[list["Task"]] = relationship(
+        "Task",
+        back_populates="parent_task",
+        cascade="all, delete-orphan",
+    )
+    parent_task: Mapped["Task"] = relationship(
+        "Task",
+        back_populates="subtasks",
+        remote_side="Task.id",
+    )
+
+    # Blackboard
+    knowledge_nodes: Mapped[list["KnowledgeNode"]] = relationship(
+        "KnowledgeNode",
+        back_populates="task",
+        cascade="all, delete-orphan",
     )
 
 

@@ -38,7 +38,7 @@ from uuid import UUID
 import dramatiq
 import structlog
 from dramatiq.brokers.redis import RedisBroker
-from sqlalchemy import select
+from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from backend.app.config import settings
@@ -260,6 +260,12 @@ async def _run_planning_phase(
         task.status = TaskStatus.EXECUTING
         await session.commit()
 
+        # ---------------------------------------------------------------------
+        # GRAPH EXECUTOR: Materialize Plan to Database (Recursion + DAG)
+        # ---------------------------------------------------------------------
+        # Convert the JSON plan into real Task/Dependency rows
+        await _materialize_plan_to_db(session, task)
+
         logger.info(
             "planning_phase_complete",
             task_id=str(task.id),
@@ -268,246 +274,471 @@ async def _run_planning_phase(
         return True, None
 
 
+async def _materialize_plan_to_db(
+    session: AsyncSession,
+    root_task,
+) -> None:
+    """
+    Convert the flat JSON Plan into a Recursive DAG in the database.
+
+    1. Creates child Task for each step.
+    2. Creates TaskDependency rows for edges.
+    """
+    from backend.app.db.models import Task, TaskDependency, TaskStatus
+
+    plan = root_task.task_plan
+    steps = plan.get("steps", [])
+
+    # Map step_id (string) -> db_task_id (UUID)
+    id_map: dict[str, UUID] = {}
+
+    # Pass 1: Create all Task Nodes
+    for step in steps:
+        step_id = step.get("step_id")
+        # Fallback for legacy numerical order if step_id missing
+        if not step_id:
+            step_id = f"step_{step.get('order')}"
+
+        child_task = Task(
+            repo_id=root_task.repo_id,
+            parent_task_id=root_task.id,
+            user_request=step.get("description"),
+            title=step_id,
+            status=TaskStatus.PENDING,
+            # We store the specific agent required in the task metadata if needed,
+            # currently we just rely on the description context or explicit assignment later.
+            # But here we can inject the persona into the context for the runner.
+        )
+        session.add(child_task)
+        await session.flush() # flush to get UUID
+        id_map[step_id] = child_task.id
+
+        # Store metadata in blackboard? Or just task_plan?
+        # For now, simpler is better: The Child Task's "user_request" IS the instruction.
+
+    # Pass 2: Create Edges (Dependencies)
+    for step in steps:
+        step_id = step.get("step_id") or f"step_{step.get('order')}"
+        blocker_ids = step.get("depends_on", [])
+
+        # Fallback for integer dependencies
+        legacy_deps = step.get("dependencies", [])
+        if legacy_deps:
+            # Map integers back to steps? This assumes order.
+            # Safety fallback: logical order 1 -> 2 -> 3
+            pass
+
+        child_uuid = id_map[step_id]
+
+        for blocker_key in blocker_ids:
+            if blocker_key in id_map:
+                blocker_uuid = id_map[blocker_key]
+                dependency = TaskDependency(
+                    blocker_task_id=blocker_uuid,
+                    blocked_task_id=child_uuid,
+                    reason="Planned Dependency"
+                )
+                session.add(dependency)
+            else:
+                logger.warning("missing_dependency_ref", step=step_id, missing=blocker_key)
+
+    await session.commit()
+
+
 # =============================================================================
 # Phase 2: Execution Pipeline (Code → Test → Fix Loop)
 # =============================================================================
 
 
-async def _run_execution_phase(
+# =============================================================================
+# Phase 2: Execution Pipeline (Topological DAG Executor)
+# =============================================================================
+
+
+async def _execute_dag_workflow(
     session: AsyncSession,
-    task,
+    root_task,
     repo,
     context: dict,
     max_fix_attempts: int = 3,
 ) -> tuple[bool, str | None]:
     """
-    Execute the coding and testing phase with automated fix loop.
+    Execute the workflow using a Topological Scheduler (Dynamic Nervous System).
 
-    Pipeline for each step:
-    1. CoderAgent writes code
-    2. QAAgent runs tests
-    3. If tests fail with fix suggestion → re-dispatch Coder → loop
-    4. After max_fix_attempts or success → next step
+    Status: LIVE (Phase IV.5)
 
-    Returns:
-        Tuple of (success, error_message)
+    Pipeline:
+    1. POLL: Scheduler.get_next_executable_tasks()
+    2. EXECUTE: Dispatch Agent for the task
+    3. VALIDATE: Referee.validate_contract()
+    4. LOOP: Repeat until all tasks complete or failure.
     """
-    from gravity_core.agents.coder import CoderAgent
-    from gravity_core.agents.qa import QAAgent
-    from gravity_core.llm import LLMClient
+    from backend.app.services.scheduler import SchedulerService
+    from gravity_core.guardrails.referee import Referee
+    from backend.app.db.models import Task, TaskStatus
 
-    from backend.app.db.models import TaskStatus
+    scheduler = SchedulerService(session)
+    referee = Referee(repo.path)
 
-    # Initialize shared LLM client
-    llm_client = LLMClient(
-        openai_api_key=settings.openai_api_key,
-        gemini_api_key=settings.google_api_key,
-        enable_fallback=True,
-        max_retries=3,
-    )
+    logger.info("dag_workflow_started", root_task_id=str(root_task.id))
 
-    steps = task.task_plan.get("steps", []) if task.task_plan else []
-    test_commands = context.get("test_commands", ["pytest"])
-    last_changeset = {}
+    # Safety: Emergency Stop Timeout
+    start_time = datetime.now(timezone.utc)
+    TIMEOUT_SECONDS = 600 # 10 minutes max for now
 
-    logger.info(
-        "execution_phase_started",
-        task_id=str(task.id),
-        step_count=len(steps),
-    )
+    while True:
+        # Check Timeout
+        if (datetime.now(timezone.utc) - start_time).total_seconds() > TIMEOUT_SECONDS:
+             return False, "Emergency Stop: Workflow timed out."
 
-    # =================================================================
-    # Execute each step from the TaskPlan
-    # =================================================================
+        # -----------------------------------------------------------------
+        # SIGNAL CHECK (Protocol: Deterministic Reality)
+        # -----------------------------------------------------------------
+        # Retrieve freshest state
+        await session.refresh(root_task)
 
-    for step_index, step in enumerate(steps):
-        task.current_step = step_index + 1
-        task.status = TaskStatus.EXECUTING
+        # PAUSE LOOP: Sleep indefinitely while paused
+        while root_task.status == TaskStatus.PAUSED:
+             logger.info("workflow_paused", root_task_id=str(root_task.id))
+             await asyncio.sleep(5) # Slow heartbeat when paused
+             await session.refresh(root_task) # Check again
 
-        agent_persona = step.get("agent_persona", "coder_be")
+        # KILL SWITCH: Stop if archived or deleted
+        if root_task.status in [TaskStatus.ARCHIVED, TaskStatus.FAILED] or root_task.status == "DELETED":
+             logger.info("workflow_terminated", root_task_id=str(root_task.id), status=root_task.status)
+             return False, "Task was terminated by user."
 
-        # Skip non-coder steps for now
-        if not agent_persona.startswith("coder"):
-            continue
+        # 1. POLL: Get Ready Tasks
+        executable_tasks = await scheduler.get_next_executable_tasks(root_task.id)
 
-        specialty = agent_persona.replace("coder_", "")
-        task.current_agent = agent_persona
-        await session.commit()
-
-        # Build step context
-        step_context = {
-            **context,
-            "step": step,
-            "plan": task.task_plan,
-        }
-
-        # =============================================================
-        # Code → Test → Fix Loop
-        # =============================================================
-
-        fix_attempts = 0
-
-        while fix_attempts < max_fix_attempts:
-            # --- CODER: Write/fix code ---
-            coder = CoderAgent(
-                specialty=specialty,
-                llm_client=llm_client,
-                model_name=settings.default_llm_model,
+        if not executable_tasks:
+            # No tasks ready. Are we done?
+            stmt = select(func.count()).where(
+                Task.parent_task_id == root_task.id,
+                Task.status != TaskStatus.COMPLETED
             )
+            count = (await session.execute(stmt)).scalar()
 
-            coder_output = await coder.execute(task.id, step_context)
-
-            # Log coder output
-            await log_agent_output(
-                session=session,
-                task_id=task.id,
-                agent_output=coder_output,
-                step_number=step_index + 1,
-            )
-
-            # Track last changeset for QA diagnosis
-            try:
-                reasoning = json.loads(coder_output.technical_reasoning)
-                changes = reasoning.get("changes", [])
-                if changes:
-                    last_changeset = changes[0]
-            except (json.JSONDecodeError, KeyError):
-                pass
-
-            # Check if coder needs review
-            if coder_output.requires_review:
-                task.status = TaskStatus.REVIEW_REQUIRED
-                await session.commit()
-                logger.info(
-                    "step_awaiting_review",
-                    task_id=str(task.id),
-                    step=step_index + 1,
-                )
-                return True, None  # Pause for human review
-
-            await session.commit()
-
-            # --- QA: Run tests ---
-            task.current_agent = "qa"
-            task.status = TaskStatus.TESTING
-            await session.commit()
-
-            qa = QAAgent(
-                llm_client=llm_client,
-                model_name=settings.default_llm_model,
-                max_fix_attempts=max_fix_attempts,
-            )
-
-            qa_context = {
-                **context,
-                "test_commands": test_commands,
-                "last_changeset": last_changeset,
-                "plan_step": step,
-            }
-
-            qa_output = await qa.execute(task.id, qa_context)
-
-            # Log QA output
-            await log_agent_output(
-                session=session,
-                task_id=task.id,
-                agent_output=qa_output,
-                step_number=step_index + 1,
-            )
-
-            # Check test results
-            if qa_output.confidence_score >= 0.9:
-                # Tests passed! Move to next step
-                logger.info(
-                    "step_tests_passed",
-                    task_id=str(task.id),
-                    step=step_index + 1,
-                )
-                break
-
-            # Tests failed - check for fix suggestion
-            if qa.has_suggested_fix():
-                fix_attempts += 1
-                suggested_fix = qa.get_suggested_fix()
-
-                logger.info(
-                    "applying_suggested_fix",
-                    task_id=str(task.id),
-                    step=step_index + 1,
-                    attempt=fix_attempts,
-                    fix_file=suggested_fix.arguments.get("file_path") if suggested_fix else None,
-                )
-
-                # Add fix to context for next coder iteration
-                step_context["suggested_fix"] = {
-                    "tool_call": suggested_fix.model_dump() if suggested_fix else None,
-                    "attempt": fix_attempts,
-                }
-
-                # Loop back to coder with fix instruction
+            if count == 0:
+                logger.info("dag_workflow_victory", root_task_id=str(root_task.id))
+                break # VICTORY
+            else:
+                # Tasks remaining but none ready.
+                # Could be waiting for Async events, or Deadlock.
+                # For now, we WAIT.
+                logger.debug("dag_workflow_waiting", root_task_id=str(root_task.id), remaining=count)
+                await asyncio.sleep(2) # Pulse Check
                 continue
 
-            else:
-                # No fix suggested - tests failed, needs human review
-                logger.warning(
-                    "step_tests_failed_no_fix",
-                    task_id=str(task.id),
-                    step=step_index + 1,
-                )
+        # 2. SELECT: Pick priority task
+        current_task = executable_tasks[0]
 
-                if qa_output.confidence_score < 0.5:
-                    task.status = TaskStatus.FAILED
-                    task.error_message = "Tests failed and no automatic fix available"
-                    await session.commit()
-                    return False, "Tests failed without automatic fix"
+        logger.info(
+            "scheduler_selected_task",
+            task_id=str(current_task.id),
+            title=current_task.title
+        )
 
-                break  # Move on despite failure
+        # 3. EXECUTE: Run the task
+        success, error = await _execute_single_task(
+            session=session,
+            task=current_task,
+            root_context=context,
+            max_fix_attempts=max_fix_attempts
+        )
 
-        # Max fix attempts reached
-        if fix_attempts >= max_fix_attempts:
-            logger.warning(
-                "max_fix_attempts_reached",
-                task_id=str(task.id),
-                step=step_index + 1,
-                attempts=fix_attempts,
-            )
+        # 4. REVIEW CHECK (Pause if needed)
+        if current_task.status in [TaskStatus.REVIEW_REQUIRED, TaskStatus.PLAN_REVIEW]:
+             logger.info("workflow_paused_for_review", subtask=str(current_task.id))
+             return True, None
+
+        # 5. VALIDATE & FEEDBACK LOOP
+        # Even if Agent thinks it succeeded, Referee checks contracts.
+        if success:
+             is_valid, validation_msg = referee.validate_contract(current_task.definition_of_done)
+
+             if is_valid:
+                 # SUCCESS CONFIRMED
+                 current_task.status = TaskStatus.COMPLETED
+                 current_task.completed_at = datetime.now(timezone.utc)
+                 await session.commit()
+                 logger.info("referee_accepted", task=current_task.title)
+
+             else:
+                 # FEEDBACK LOOP: REJECT & RETRY
+                 logger.warning("referee_rejected", task=current_task.title, reason=validation_msg)
+
+                 # Check Retry Limit
+                 if current_task.retry_count >= 3:
+                     current_task.status = TaskStatus.FAILED
+                     current_task.error_message = f"Referee rejection limit reached. Last error: {validation_msg}"
+                     await session.commit()
+                     return False, f"Task '{current_task.title}' failed Referee check 3 times."
+
+                 # Inject Logic Back into Task
+                 current_task.status = TaskStatus.PENDING # Reset to Pending so Scheduler picks it up
+                 current_task.retry_count += 1
+
+                 # Append Feedback to user_request so Agent sees it next time
+                 feedback = f"\n\n[SYSTEM FEEDBACK]: Previous attempt rejected. Reason: {validation_msg}"
+                 if feedback not in current_task.user_request:
+                     current_task.user_request += feedback
+
+                 await session.commit()
+                 logger.info("task_reset_for_retry", task=current_task.title, attempt=current_task.retry_count)
+                 continue # Loop back immediately
+
+        elif not success:
+             # Logic execution failed (e.g. tests failed hard)
+             return False, f"Task '{current_task.title}' Logic Failed: {error}"
 
     # =================================================================
-    # All steps complete → move to DOCUMENTING
+    # Final Documentation Phase (Run once after DAG completes)
     # =================================================================
 
-    task.status = TaskStatus.DOCUMENTING
-    task.current_agent = "docs"
+    root_task.status = TaskStatus.DOCUMENTING
+    root_task.current_agent = "docs"
     await session.commit()
 
     # Dispatch DocsAgent
+    # We need to collect changes from subtasks if we want to document them.
+    # For now, simple pass.
     success, error = await _run_documentation_phase(
         session=session,
-        task=task,
+        task=root_task,
         repo=repo,
         context=context,
-        all_changes=last_changeset,  # Pass accumulated changes
+        all_changes={}, # TODO: Aggregate changes from subtasks
     )
 
     if not success:
         logger.warning(
             "documentation_phase_failed",
-            task_id=str(task.id),
+            task_id=str(root_task.id),
             error=error,
         )
-        # Documentation failure is non-fatal - continue to completion
 
-    # Mark as completed
-    task.status = TaskStatus.COMPLETED
-    task.current_agent = None
-    task.completed_at = datetime.now(timezone.utc)
+    # Mark root task as completed
+    root_task.status = TaskStatus.COMPLETED
+    root_task.current_agent = None
+    root_task.completed_at = datetime.now(timezone.utc)
     await session.commit()
 
     logger.info(
         "execution_phase_complete",
-        task_id=str(task.id),
-        steps_executed=len(steps),
+        task_id=str(root_task.id),
+        loops=loop_count,
     )
+
+    return True, None
+
+
+async def _execute_single_task(
+    session: AsyncSession,
+    task,
+    root_context: dict,
+    max_fix_attempts: int = 3,
+) -> tuple[bool, str | None]:
+    """
+    Execute a single atomic task (Code -> Test -> Fix).
+    Extracted from the old linear loop.
+    """
+    from gravity_core.agents.coder import CoderAgent
+    from gravity_core.agents.qa import QAAgent
+    from gravity_core.llm import LLMClient
+    from backend.app.db.models import TaskStatus
+
+    # Initialize shared LLM client
+    llm_client = LLMClient(
+        openai_api_key=settings.openai_api_key,
+        gemini_api_key=settings.google_api_key, # Corrected config access
+        enable_fallback=True,
+        max_retries=3,
+    )
+
+    test_commands = root_context.get("test_commands", ["pytest"])
+    last_changeset = {}
+
+    # task.current_step is less relevant now, but we can keep it for UI
+    task.status = TaskStatus.EXECUTING
+
+    # Determine persona from title or metadata?
+    # Schema doesn't have explicit persona column on Task yet, relying on planner to put it in description/title?
+    # Or we default to coder_be.
+    # Ideally, Task model has 'assigned_agent' column.
+    # For now, let's look at the TaskPlan step dict if we can find it?
+    # The 'task' object here is a DB Task.
+
+    # Hack for Phase IV: Default to Coder BE unless "docs" or "qa" in title
+    agent_persona = "coder_be"
+    specialty = "be"
+
+    task.current_agent = agent_persona
+    await session.commit()
+
+    step_context = {
+        **root_context,
+        "task_description": task.user_request,
+        # "step": step, # We don't have the dictionary step here easily unless we parse root plan
+    }
+
+    # =============================================================
+    # Code → Test → Fix Loop
+    # =============================================================
+
+
+    # =============================================================
+    # Code → Test → Fix Loop
+    # =============================================================
+
+    # NEW: Determine if we have sub-steps from the plan
+    # If the task has a structured plan (from PlannerAgent), we should try to follow it.
+    # However, currently `task.task_plan` is a JSON blob for the whole mission.
+    # The `current_task` is usually a leaf node in the DAG.
+    # Let's assume the Agent (LLM) is smart enough to see the request and execute it.
+    # But to enforce "Ghost Code" fix, we will check the OUTPUT of the agent.
+
+    fix_attempts = 0
+    from pathlib import Path
+
+    while fix_attempts < max_fix_attempts:
+        # --- CODER: Write/fix code ---
+        coder = CoderAgent(
+            specialty=specialty,
+            llm_client=llm_client,
+            model_name=settings.default_llm_model,
+        )
+
+        coder_output = await coder.execute(task.id, step_context)
+
+        # Log coder output
+        await log_agent_output(
+             session=session,
+             task_id=task.id,
+             agent_output=coder_output,
+             step_number=0,
+        )
+
+        # -------------------------------------------------------------
+        # PROTOCOL DETERMINISTIC REALITY: The Verify Stage
+        # -------------------------------------------------------------
+        # Scan the agent's output for file operations and physically check disk.
+
+        reality_check_passed = True
+        missing_files = []
+
+        # We inspect the specialized `_changes` list from the CoderAgent if accessible,
+        # or we parse the `tool_calls` from the output.
+        # CoderAgent returns an AgentOutput which has `tool_calls`.
+
+        if coder_output.tool_calls:
+            for tool in coder_output.tool_calls:
+                if tool.tool_name in ["create_new_module", "edit_file_snippet", "write_to_file"]:
+                    # Extract target path
+                    target_path = tool.arguments.get("file_path") or tool.arguments.get("path") or tool.arguments.get("target_file")
+
+                    if target_path:
+                        # Normalize path
+                        real_path = Path(target_path)
+                        if not real_path.is_absolute():
+                             # Dangerous assumption, but Coder usually tries absolute.
+                             # If relative, treat as relative to repo root (not implemented here safely yet)
+                             pass
+
+                        if not real_path.exists():
+                             logger.warning("reality_check_failed", task_id=str(task.id), missing_file=str(real_path))
+                             missing_files.append(str(real_path))
+                             reality_check_passed = False
+                        else:
+                             logger.info("reality_check_passed", file=str(real_path))
+
+        if not reality_check_passed:
+             error_msg = f"Reality Check Failed: Agent claimed to create files, but they are missing from disk: {', '.join(missing_files)}"
+
+             # If we haven't maxed out retries, loop back immediately with this error
+             fix_attempts += 1
+
+             # Update context to SCREAM at the agent
+             step_context["system_feedback"] = f"CRITICAL ERROR: You claimed to create file(s) {missing_files}, but I checked the OS and they are MISSING. You likely hallucinated the tool call or the path is wrong. TRY AGAIN. USE THE TOOLS."
+
+             logger.warning("forcing_retry_ghost_code", task_id=str(task.id), attempt=fix_attempts)
+             continue
+
+        # If Coder succeeds and verifies, we proceed to QA (if applicable)
+        # For pure "Setup" tasks, Coder success might be enough.
+        # But we still run the standard loop.
+
+        # Track changeset
+        try:
+            reasoning = json.loads(coder_output.technical_reasoning)
+            changes = reasoning.get("changes", [])
+            if changes:
+                last_changeset = changes[0]
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+        # Check review
+        if coder_output.requires_review:
+            task.status = TaskStatus.REVIEW_REQUIRED
+            await session.commit()
+            return True, None # Pause
+
+        await session.commit()
+
+        # --- QA: Run tests ---
+        task.current_agent = "qa"
+        task.status = TaskStatus.TESTING
+        await session.commit()
+
+        qa = QAAgent(
+            llm_client=llm_client,
+            model_name=settings.default_llm_model,
+            max_fix_attempts=max_fix_attempts,
+        )
+
+        qa_context = {
+            **root_context,
+            "test_commands": test_commands,
+            "last_changeset": last_changeset,
+            "task_goal": task.user_request,
+        }
+
+        qa_output = await qa.execute(task.id, qa_context)
+
+        await log_agent_output(
+            session=session,
+            task_id=task.id,
+            agent_output=qa_output,
+            step_number=0,
+        )
+
+        # Check test results
+        if qa_output.confidence_score >= 0.9:
+            # Passed
+            break
+
+        # Failed
+        if qa.has_suggested_fix():
+            fix_attempts += 1
+            suggested_fix = qa.get_suggested_fix()
+
+            logger.info("applying_suggested_fix", task_id=str(task.id), attempt=fix_attempts)
+
+            step_context["suggested_fix"] = {
+                "tool_call": suggested_fix.model_dump() if suggested_fix else None,
+                "attempt": fix_attempts
+            }
+            continue
+        else:
+            # Failed no fix
+            if qa_output.confidence_score < 0.5:
+                # task.status = TaskStatus.FAILED # Caller handles status
+                return False, "Tests failed without automatic fix"
+            break
+
+    # Max attempts
+    if fix_attempts >= max_fix_attempts:
+        logger.warning("max_fix_attempts_reached", task_id=str(task.id))
 
     return True, None
 
@@ -680,9 +911,13 @@ async def _run_task_async(task_id: str) -> None:
             # Step 3: EXECUTION PHASE (Code → Test → Fix Loop)
             # =================================================================
 
-            success, error = await _run_execution_phase(
+            # =================================================================
+            # Step 3: EXECUTION PHASE (Topological DAG Workflow)
+            # =================================================================
+
+            success, error = await _execute_dag_workflow(
                 session=session,
-                task=task,
+                root_task=task,
                 repo=repo,
                 context=context,
             )
@@ -757,9 +992,11 @@ def run_task(task_id: str) -> None:
     Settings:
         max_retries: 3 attempts before permanent failure
         time_limit: 5 minutes per attempt
-        min_backoff: 1 second between retries
+        min_backoff: 1 second minimum backoff
         max_backoff: 60 seconds max between retries
     """
+    print(f"WORKER_RECEIVED_TASK: {task_id}")
+    logger.info("dramatiq_actor_received", task_id=task_id)
     asyncio.run(_run_task_async(task_id))
 
 
@@ -904,9 +1141,9 @@ async def _run_task_async(task_id: str) -> None:
                 # Step 3: EXECUTION PHASE (Code → Test → Fix Loop)
                 # =================================================================
 
-                success, error = await _run_execution_phase(
+                success, error = await _execute_dag_workflow(
                     session=session,
-                    task=task,
+                    root_task=task,
                     repo=repo,
                     context=context,
                 )

@@ -139,6 +139,7 @@ async def create_task(
 @router.get("/", response_model=list[TaskResponse])
 async def list_tasks(
     repo_id: UUID | None = None,
+    parent_task_id: UUID | None = None, # Start supporting hierarchical fetch
     status_filter: TaskStatus | None = None,
     limit: int = 50,
     offset: int = 0,
@@ -153,7 +154,22 @@ async def list_tasks(
     if status_filter:
         query = query.where(Task.status == status_filter)
 
+    # SYSTEM 3: Hierarchical View
+    if parent_task_id:
+        # If specifically asking for subtasks, verify them
+        query = query.where(Task.parent_task_id == parent_task_id)
+        # We might want to sort subtasks by creation order (FIFO) instead of DESC?
+        # Actually usually easier to read top-down.
+        query = query.order_by(Task.created_at.asc())
+    else:
+        # Default behavior: Show ONLY Root Tasks
+        query = query.where(Task.parent_task_id.is_(None))
+
     query = query.limit(limit).offset(offset)
+
+    # We need to execute a new query because the order_by might have changed
+    # Logic above appended order_by asc to desc? SQLAlchemy handles this but safer to be clean.
+    # Actually, the first order_by is global.
 
     result = await session.execute(query)
     return list(result.scalars().all())
@@ -292,6 +308,62 @@ async def approve_task_plan(
     return {"message": "Plan approved, execution continuing", "task_id": str(task_id)}
 
 
+@router.post("/{task_id}/pause")
+async def pause_task(
+    task_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Pause a running task."""
+    result = await session.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    # Allow pausing from any active state
+    if task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED]:
+        raise HTTPException(status_code=400, detail="Cannot pause a finished task")
+
+    task.status = TaskStatus.PAUSED
+    await session.commit()
+    logger.info("task_paused", task_id=str(task_id))
+    return {"message": "Task paused", "task_id": str(task_id)}
+
+
+@router.post("/{task_id}/resume")
+async def resume_task_endpoint(
+    task_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Resume a paused task."""
+    result = await session.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    if task.status != TaskStatus.PAUSED:
+        raise HTTPException(status_code=400, detail=f"Task is not paused (status: {task.status})")
+
+    # Resume to PENDING to trigger Scheduler re-evaluation
+    # If it was EXECUTING, it will be picked up again.
+    task.status = TaskStatus.PENDING
+    await session.commit()
+
+    # Ensure worker is running (dispatch just in case, though polling might catch it)
+    # Actually, we should check if worker is alive. But sending a message is safe.
+    # If using pure DAG loop, we rely on the loop being alive.
+    # BUT, if the loop was sleeping/paused, we need to wake it up?
+    # For now, let's assume the Runner Loop is checking status.
+    # WAIT: If the runner loop checks status, it needs to be running.
+    # If we PAUSED via API, the Runner sees PAUSED and sleeps.
+    # If we RESUME via API, the Runner sees PENDING (or EXECUTING?) and continues.
+    # Setting to PENDING is safe.
+
+    logger.info("task_resumed", task_id=str(task_id))
+    return {"message": "Task resumed", "task_id": str(task_id)}
+
+
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_task(
     task_id: UUID,
@@ -310,6 +382,14 @@ async def delete_task(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task {task_id} not found",
         )
+
+    # Manually delete dependencies first to avoid FK constraints if ondelete=CASCADE is missing
+    await session.execute(
+        delete(TaskDependency).where(
+            (TaskDependency.blocker_task_id == task_id) |
+            (TaskDependency.blocked_task_id == task_id)
+        )
+    )
 
     await session.delete(task)
     await session.commit()

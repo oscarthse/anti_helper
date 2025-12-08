@@ -9,13 +9,16 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Task, AgentLog, TaskPlan } from '@/types/schema'
-import { subscribeToTaskStream, approveTaskPlan } from '@/lib/api'
+import { subscribeToTaskStream, approveTaskPlan, pauseTask, resumeTask, deleteTask } from '@/lib/api'
 import { TaskPlanView } from './TaskPlanView'
 import { AgentCard } from './AgentCard'
 import { DiffViewer } from './DiffViewer'
 import { TerminalOutput } from './TerminalOutput'
 import { LiveStatusBar } from './LiveStatusBar'
-import { AlertCircle, Wifi, WifiOff, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { FileTree } from './FileTree'
+import { AlertCircle, Wifi, WifiOff, CheckCircle, XCircle, Loader2, Trash2 } from 'lucide-react'
+import { useProjectState } from '@/hooks/useProjectState'
+import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
 interface WarRoomProps {
@@ -23,13 +26,37 @@ interface WarRoomProps {
 }
 
 export function WarRoom({ task }: WarRoomProps) {
+  const router = useRouter()
+  // Glass Cockpit State (Websocket Truth)
+  // We use this for Active Status to ensure "Pause" is reflected instantly
+  const projectState = useProjectState(task.id)
+
+  // Find current root task state from WS
+  const liveTaskNode = projectState.tasks.find(t => t.id === task.id)
+
   const [logs, setLogs] = useState<AgentLog[]>([])
   const [isConnected, setIsConnected] = useState(false)
   const [isReconnecting, setIsReconnecting] = useState(false)
   const [currentStep, setCurrentStep] = useState(task.current_step || 0)
-  const [taskStatus, setTaskStatus] = useState(task.status?.toLowerCase() || 'pending')
+
+  // Prefer WebSocket status, fallback to props
+  const [taskStatus, setTaskStatus] = useState(liveTaskNode?.status?.toLowerCase() || task.status?.toLowerCase() || 'pending')
+
+  // Sync local status when WebSocket updates
+  useEffect(() => {
+    if (liveTaskNode) {
+      setTaskStatus(liveTaskNode.status.toLowerCase())
+    }
+  }, [liveTaskNode])
+
   const [isApproving, setIsApproving] = useState(false)
   const [approvalError, setApprovalError] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  // Pause/Resume State
+  const [isPausing, setIsPausing] = useState(false)
+  const [isResuming, setIsResuming] = useState(false)
+
   const streamRef = useRef<HTMLDivElement>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
 
@@ -53,6 +80,48 @@ export function WarRoom({ task }: WarRoomProps) {
       setIsApproving(false)
     }
   }, [task.id])
+
+  // Handle Pause
+  const handlePause = useCallback(async () => {
+    setIsPausing(true)
+    try {
+      await pauseTask(task.id)
+      setTaskStatus('paused')
+    } catch (error) {
+      console.error('Failed to pause:', error)
+    } finally {
+      setIsPausing(false)
+    }
+  }, [task.id])
+
+  // Handle Resume
+  const handleResume = useCallback(async () => {
+    setIsResuming(true)
+    try {
+      await resumeTask(task.id)
+      setTaskStatus('pending') // Optimistic update, stream will correct it
+    } catch (error) {
+      console.error('Failed to resume:', error)
+    } finally {
+      setIsResuming(false)
+    }
+  }, [task.id])
+
+  // Handle Delete
+  const handleDelete = useCallback(async () => {
+    if (!confirm("Are you sure you want to delete this mission? This cannot be undone.")) return;
+
+    setIsDeleting(true)
+    try {
+      await deleteTask(task.id)
+      // Force hard reload to ensure Dashboard (Server Component) list is fresh.
+      // Next.js client-side router cache might otherwise show the stale task.
+      window.location.href = '/'
+    } catch (error) {
+      console.error("Failed to delete", error)
+      setIsDeleting(false)
+    }
+  }, [task.id, router])
 
 
   // Auto-scroll to bottom when new logs arrive
@@ -274,42 +343,61 @@ export function WarRoom({ task }: WarRoomProps) {
         {/* Live Status Bar */}
         <LiveStatusBar
           task={task}
-          taskPlan={taskPlan}
-          currentStep={currentStep}
+          status={taskStatus}
+          step={currentStep}
+          agent={logs[logs.length - 1]?.agent_persona || 'system'}
+          logs={logs}
           isConnected={isConnected}
+          onPause={handlePause}
+          onResume={handleResume}
+          isPausing={isPausing}
+          isResuming={isResuming}
         />
-
         {/* Stream Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-          <h2 className="text-sm font-medium text-slate-300 uppercase tracking-wider">
-            Activity Feed
-          </h2>
+          <div className="flex items-center gap-4">
+            <h2 className="text-sm font-medium text-slate-300 uppercase tracking-wider">
+              Activity Feed
+            </h2>
+          </div>
 
-          {/* Connection Status */}
-          <div className={cn(
-            "flex items-center gap-1.5 px-2 py-1 rounded text-xs",
-            isConnected
-              ? "text-emerald-400"
-              : isReconnecting
-                ? "text-amber-400"
-                : "text-red-400"
-          )}>
-            {isConnected ? (
-              <>
-                <Wifi className="h-3.5 w-3.5" />
-                Live
-              </>
-            ) : isReconnecting ? (
-              <>
-                <AlertCircle className="h-3.5 w-3.5 animate-pulse" />
-                Reconnecting...
-              </>
-            ) : (
-              <>
-                <WifiOff className="h-3.5 w-3.5" />
-                Disconnected
-              </>
-            )}
+          <div className="flex items-center gap-3">
+            {/* Delete Button */}
+            <button
+              onClick={handleDelete}
+              disabled={isDeleting}
+              title="Delete Mission"
+              className="text-slate-600 hover:text-red-400 transition-colors p-1"
+            >
+              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            </button>
+
+            {/* Connection Status */}
+            <div className={cn(
+              "flex items-center gap-1.5 px-2 py-1 rounded text-xs",
+              isConnected
+                ? "text-emerald-400"
+                : isReconnecting
+                  ? "text-amber-400"
+                  : "text-red-400"
+            )}>
+              {isConnected ? (
+                <>
+                  <Wifi className="h-3.5 w-3.5" />
+                  Live
+                </>
+              ) : isReconnecting ? (
+                <>
+                  <AlertCircle className="h-3.5 w-3.5 animate-pulse" />
+                  Reconnecting...
+                </>
+              ) : (
+                <>
+                  <WifiOff className="h-3.5 w-3.5" />
+                  Disconnected
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -350,21 +438,27 @@ export function WarRoom({ task }: WarRoomProps) {
       </div>
 
       {/* Column 3: Artifacts (Diff & Terminal) */}
-      <div className="w-96 flex-shrink-0 flex flex-col overflow-hidden bg-slate-950/30">
-        <div className="p-4 border-b border-slate-800">
+      <div className="w-96 flex-shrink-0 flex flex-col overflow-hidden bg-slate-950/30 border-l border-slate-800">
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <h2 className="text-sm font-medium text-slate-300 uppercase tracking-wider">
             Artifacts
           </h2>
         </div>
 
         <div className="flex-1 flex flex-col overflow-auto">
+
+          {/* File Tree (Protocol: Truth) */}
+          <div className="h-1/3 min-h-[200px] border-b border-slate-800 overflow-auto bg-slate-950/20">
+            <FileTree repoId={task.repo_id} className="p-2" />
+          </div>
+
           {/* Diff Viewer */}
           <div className="flex-1 min-h-0 border-b border-slate-800">
             <DiffViewer changeSet={latestChangeSet as Record<string, unknown> | undefined} />
           </div>
 
           {/* Terminal Output */}
-          <div className="h-48 flex-shrink-0">
+          <div className="h-48 flex-shrink-0 bg-black">
             <TerminalOutput output={terminalOutput} />
           </div>
         </div>

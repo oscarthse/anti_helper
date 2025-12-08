@@ -71,7 +71,7 @@ export function TaskPlanView({ plan, currentStep = 0, completedSteps = [] }: Tas
         <div className="pt-3 border-t border-slate-800">
           <p className="text-xs text-slate-500 mb-2">Affected Files</p>
           <div className="space-y-1">
-            {plan.affected_files.map((file, i) => (
+            {Array.from(new Set(plan.affected_files)).map((file, i) => (
               <div
                 key={i}
                 className="text-xs font-mono text-slate-400 truncate"

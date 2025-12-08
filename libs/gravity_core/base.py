@@ -61,6 +61,11 @@ class BaseAgent(ABC):
         self.model = model
         self.temperature = temperature
         self._tool_calls: list[ToolCall] = []
+        self._chat_history: list[dict] = []  # For Neuro-Symbolic Loop History
+
+        # Guardrail Constants
+        self.MAX_HISTORY_STEPS = 10
+        self.MAX_TOOL_OUTPUT_CHARS = 2000
 
         logger.info(
             "agent_initialized",
@@ -92,7 +97,25 @@ class BaseAgent(ABC):
         else:
             result = await ToolRegistry.execute(tool_name, **kwargs)
 
-        self._tool_calls.append(result)
+        # ---------------------------------------------------------------------
+        # CONTEXT COMPRESSOR: Truncate large outputs for history/logs
+        # ---------------------------------------------------------------------
+        # We define a separate log entry to preserve the full result return value
+        # for the caller (who needs itProgrammatic use), but compress the memory.
+        log_entry = result.model_copy()
+
+        result_str = str(log_entry.result)
+        if result_str and len(result_str) > self.MAX_TOOL_OUTPUT_CHARS:
+            img = f"... [TRUNCATED via ContextCompressor. Original size: {len(result_str)} chars] ..."
+            head = result_str[:self.MAX_TOOL_OUTPUT_CHARS // 2]
+            tail = result_str[-(self.MAX_TOOL_OUTPUT_CHARS // 2):]
+            log_entry.result = f"{head}\n{img}\n{tail}"
+
+        self._tool_calls.append(log_entry)
+
+        # Also append to chat_history if managing a loop
+        self.add_history("tool", log_entry.result, tool_call_id=tool_name) # simplified ID
+
         return result
 
     def build_output(
@@ -143,7 +166,37 @@ class BaseAgent(ABC):
         """
         pass
 
+    def add_history(self, role: str, content: str, tool_call_id: str | None = None) -> None:
+        """
+        Add a message to history with Sliding Window compression.
+
+        Preserves:
+        1. System Prompt (implied context)
+        2. Plan Summary (if tagged)
+        3. The last N messages
+
+        Truncates the middle to avoid Context Pollution.
+        """
+        message = {"role": role, "content": content}
+        if tool_call_id:
+            message["tool_call_id"] = tool_call_id
+
+        self._chat_history.append(message)
+
+        # Sliding Window Logic
+        if len(self._chat_history) > self.MAX_HISTORY_STEPS:
+            # Simple implementation: Remove oldest non-system/non-plan message
+            # Assuming typical flow: User (Plan) -> Assistant -> Tool -> Assistant...
+
+            # Keep index 0 (Plan/Request)
+            # Remove index 1
+            excess = len(self._chat_history) - self.MAX_HISTORY_STEPS
+            if excess > 0:
+                 # Slice: Keep [0] + [1+excess:]
+                 self._chat_history = [self._chat_history[0]] + self._chat_history[1 + excess:]
+
     async def __call__(
+
         self,
         task_id: UUID,
         context: dict[str, Any],

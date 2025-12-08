@@ -12,7 +12,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api import repos, streaming, tasks
+from backend.app.api import repos, streaming, tasks, dashboard, files
 from backend.app.db.session import init_db
 
 logger = structlog.get_logger()
@@ -54,10 +54,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
+# Register routers
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(repos.router, prefix="/api/repos", tags=["repos"])
 app.include_router(streaming.router, prefix="/api/stream", tags=["streaming"])
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
+app.include_router(files.router, prefix="/api/files", tags=["files"])
 
 
 @app.get("/")

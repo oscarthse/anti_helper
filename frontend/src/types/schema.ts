@@ -15,6 +15,7 @@ export type TaskStatus =
   | "documenting"
   | "completed"
   | "failed"
+  | "paused"
   | "review_required";
 
 export interface ToolCall {
