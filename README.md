@@ -1,6 +1,8 @@
 # 🚀 Antigravity Dev
 
 > A repo-aware, sandboxed, multi-agent AI development platform that plans, edits, and tests changes across complex applications as a disciplined engineering team.
+>
+> **[📘 Read the Technical Deep Dive (Neuro-Symbolic Architecture)](md/TECHNICAL.md)**
 
 ## 🏗️ Architecture
 
@@ -13,9 +15,9 @@
 | **THE FACE** (Frontend) | Visual Renderer | Next.js 14, TypeScript, Tailwind, Shadcn UI, Framer Motion |
 
 **Recent Critical Updates:**
-- 🛡️ **Security Hardened:** Sandbox isolation strictly enforced (no local fallback).
-- ⚡ **Async Optimized:** Database inspection runs in non-blocking threads.
-- 🔗 **Connected Nervous System:** API fully integrated with Dramatiq workers.
+- 🛡️ **Protocol "Deterministic Reality":** "Sledgehammer" verification blocks "Ghost Code" by checking physical disk writes.
+- 🧠 **Neuro-Symbolic Core:** Linear plans replaced by a dynamic **DAG Execution Engine** with deadlock detection.
+- 🕹️ **Glass Cockpit:** Truth-first UI rendering the *actual* system state, not the LLM's hallucinated state.
 
 ## 🤖 Agent Personas
 
@@ -142,8 +144,8 @@ gravity db history           # Show migration history
 │                     FULL AGENT PIPELINE                                  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  1. PLANNER    TaskPlan with steps, assigned agents                      │
-│       │        (RAG context from ProjectMap)                             │
+│  1. PLANNER    TaskPlan (DAG) with steps, assigned agents                │
+│       │        (RAG context from ProjectMap + Topological Sort)          │
 │       ▼                                                                  │
 │  2. CODER      ChangeSet with diffs per step                             │
 │       │        (tool-forcing: edit_file_snippet)                         │
