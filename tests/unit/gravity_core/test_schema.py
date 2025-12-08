@@ -206,26 +206,29 @@ class TestTaskStep:
     def test_valid_task_step(self):
         """Test valid TaskStep creation."""
         step = TaskStep(
+            step_id="step-1",
             order=1,
             description="Implement feature",
             agent_persona=AgentPersona.CODER_BE,
-            dependencies=[],
+            depends_on=[],
             files_affected=["main.py"],
         )
 
+        assert step.step_id == "step-1"
         assert step.order == 1
         assert step.agent_persona == AgentPersona.CODER_BE
 
     def test_task_step_with_dependencies(self):
         """Test TaskStep with dependencies."""
         step = TaskStep(
+            step_id="step-3",
             order=3,
             description="Run tests",
             agent_persona=AgentPersona.QA,
-            dependencies=[1, 2],
+            depends_on=["step-1", "step-2"],
         )
 
-        assert step.dependencies == [1, 2]
+        assert step.depends_on == ["step-1", "step-2"]
 
 
 class TestChangeSet:

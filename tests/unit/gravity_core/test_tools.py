@@ -203,7 +203,7 @@ return True
         )
 
         assert result["success"] is True
-        assert result["occurrences_replaced"] == 1
+        assert result["replaced_count"] == 1
 
         content = Path(temp_file).read_text()
         assert "return False" in content

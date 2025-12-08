@@ -74,23 +74,26 @@ class TestPlannerExecuteHappyPath:
             summary="Add input validation to user endpoint",
             steps=[
                 TaskStep(
+                    step_id="step-1",
                     order=1,
                     description="Update User Pydantic schema with validation",
                     agent_persona=AgentPersona.CODER_BE,
                     files_affected=["backend/app/schemas/user.py"],
                 ),
                 TaskStep(
+                    step_id="step-2",
                     order=2,
                     description="Add validation logic to endpoint",
                     agent_persona=AgentPersona.CODER_BE,
-                    dependencies=[1],
+                    depends_on=["step-1"],
                     files_affected=["backend/app/api/users.py"],
                 ),
                 TaskStep(
+                    step_id="step-3",
                     order=3,
                     description="Add unit tests for validation",
                     agent_persona=AgentPersona.QA,
-                    dependencies=[2],
+                    depends_on=["step-2"],
                     files_affected=["tests/test_users.py"],
                 ),
             ],
@@ -262,6 +265,7 @@ class TestPlannerRAGInfluence:
                     summary="Plan for validation",
                     steps=[
                         TaskStep(
+                            step_id="step-1",
                             order=1,
                             description=step_desc,
                             agent_persona=AgentPersona.CODER_BE,
