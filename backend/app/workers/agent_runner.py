@@ -312,7 +312,7 @@ async def _run_planning_phase(
     session: AsyncSession,
     task,
     repo,
-    context: dict,
+    context: TaskContext,
 ) -> tuple[bool, str | None]:
     """
     Execute the planning phase of the workflow.
@@ -323,6 +323,7 @@ async def _run_planning_phase(
     from gravity_core.agents.planner import PlannerAgent
     from gravity_core.llm import LLMClient
     from gravity_core.memory.project_map import ProjectMap
+    from gravity_core.schema import TaskContext
 
     from backend.app.db.models import TaskStatus
 
@@ -357,9 +358,9 @@ async def _run_planning_phase(
     )
 
     # Add project context to the execution context
-    context["project_context"] = project_map.to_context()
+    context.project_context = project_map.to_context()
 
-    plan_output = await planner.execute(task.id, context)
+    plan_output = await planner.execute(task.id, context.model_dump())
 
     # --- Step 4: Log the Planning Output ---
     await log_agent_output(
@@ -487,6 +488,7 @@ async def _run_task_async(task_id: str) -> None:
     """
     from backend.app.db.models import TaskStatus
     from backend.app.services.dag_executor import DAGExecutor
+    from gravity_core.schema import TaskContext
 
     logger.info("worker_task_started", task_id=task_id)
 
@@ -526,10 +528,11 @@ async def _run_task_async(task_id: str) -> None:
                     return
 
                 # Build execution context
-                context = {
-                    "user_request": task.user_request,
-                    "repo_path": repo.path,
-                }
+                context = TaskContext(
+                    task_id=task.id,
+                    user_request=task.user_request,
+                    repo_path=repo.path,
+                )
 
                 # =============================================================
                 # Step 2: PLANNING PHASE
@@ -571,7 +574,7 @@ async def _run_task_async(task_id: str) -> None:
                     session=session,
                     root_task=task,
                     repo=repo,
-                    context=context,
+                    context=context.model_dump(),
                 )
 
                 result = await executor.execute()

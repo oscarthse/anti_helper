@@ -8,6 +8,7 @@ and run code formatting/linting.
 import subprocess
 from pathlib import Path
 
+from gravity_core.schema import FileOpResult
 import structlog
 
 from gravity_core.tools.registry import tool
@@ -49,7 +50,7 @@ async def edit_file_snippet(
     old_content: str,
     new_content: str,
     occurrence: int = 1,
-) -> dict:
+) -> FileOpResult:
     """
     Surgically edit a file by replacing specific content.
 
@@ -59,21 +60,22 @@ async def edit_file_snippet(
 
     file_path = Path(path)
     if not file_path.exists():
-        return {"error": f"File does not exist: {path}", "success": False}
+        return FileOpResult(success=False, path=path, operation="edit", error=f"File does not exist: {path}")
 
     try:
         original = file_path.read_text()
     except Exception as e:
-        return {"error": f"Could not read file: {e}", "success": False}
+        return FileOpResult(success=False, path=path, operation="edit", error=f"Could not read file: {e}")
 
     # Count occurrences
     count = original.count(old_content)
     if count == 0:
-        return {
-            "error": "Old content not found in file",
-            "success": False,
-            "hint": "Make sure the content matches exactly, including whitespace",
-        }
+        return FileOpResult(
+            success=False,
+            path=path,
+            operation="edit",
+            error="Old content not found in file. Hint: Make sure the content matches exactly, including whitespace"
+        )
 
     # Replace content
     if occurrence == 0:
@@ -83,10 +85,12 @@ async def edit_file_snippet(
     else:
         # Replace specific occurrence
         if occurrence > count:
-            return {
-                "error": f"Occurrence {occurrence} not found (only {count} matches)",
-                "success": False,
-            }
+            return FileOpResult(
+                success=False,
+                path=path,
+                operation="edit",
+                error=f"Occurrence {occurrence} not found (only {count} matches)"
+            )
 
         # Find and replace nth occurrence
         idx = -1
@@ -108,15 +112,21 @@ async def edit_file_snippet(
              raise RuntimeError(f"CRITICAL: Wrote 0 bytes to {file_path} during edit.")
 
     except Exception as e:
-        return {"error": f"Could not save file: {e}", "success": False}
+        return FileOpResult(
+            success=False,
+            path=path,
+            operation="edit",
+            error=f"Could not save file: {e}"
+        )
 
-    return {
-        "success": True,
-         # Return absolute path
-        "path": str(file_path.absolute()),
-        "diff": _generate_diff(original, modified, path),
-        "replaced_count": replaced_count,
-    }
+    return FileOpResult(
+        success=True,
+        path=str(file_path.absolute()),
+        operation="edit",
+        diff=_generate_diff(original, modified, path),
+        size_bytes=len(modified),
+        verification_passed=True,
+    )
 
 
 @tool(
@@ -154,7 +164,7 @@ async def create_new_module(
     content: str,
     create_init: bool = True,
     overwrite: bool = False,
-) -> dict:
+) -> FileOpResult:
     """
     Create a new file with proper directory structure.
     """
@@ -166,17 +176,18 @@ async def create_new_module(
 
     # Check if file exists
     if file_path.exists() and not overwrite:
-        return {
-            "error": f"File already exists: {path}",
-            "success": False,
-            "hint": "Set overwrite=True to replace existing file",
-        }
+        return FileOpResult(
+            success=False,
+            path=path,
+            operation="create",
+            error=f"File already exists: {path}. Hint: Set overwrite=True to replace existing file"
+        )
 
     # Create parent directories
     try:
         file_path.parent.mkdir(parents=True, exist_ok=True)
     except PermissionError as e:
-        return {"error": f"Permission denied creating directory: {e}", "success": False}
+        return FileOpResult(success=False, path=path, operation="create", error=f"Permission denied creating directory: {e}")
 
     # Define safe boundaries for __init__.py creation
     # Stop at these directories and don't go above them
@@ -239,14 +250,21 @@ async def create_new_module(
     except Exception as e:
         logger.exception("create_new_module_failed_exception", path=path, error=str(e))
         # Ensure we return the error
-        return {"error": f"Could not write file: {e}", "success": False}
+        return FileOpResult(
+            success=False,
+            path=path,
+            operation="create",
+            error=f"Could not write file: {e}"
+        )
 
-    return {
-        "success": True,
-        "path": str(file_path.absolute()),
-        "size": len(content),
-        "init_files_created": init_files_created,
-    }
+    return FileOpResult(
+        success=True,
+        path=str(file_path.absolute()),
+        operation="create",
+        size_bytes=len(content),
+        verification_passed=True,
+        data={"init_files_created": init_files_created}
+    )
 
 
 @tool(

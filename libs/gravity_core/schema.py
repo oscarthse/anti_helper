@@ -67,6 +67,59 @@ class ToolCall(BaseModel):
 
 
 # =============================================================================
+# Tool Result Contracts
+# =============================================================================
+
+
+class ToolResult(BaseModel):
+    """
+    Base contract for all tool results.
+
+    Ensures every tool returns a verified success status and structured data,
+    never just a loose dictionary.
+    """
+    success: bool = Field(description="Whether the tool operation succeeded")
+    error: str | None = Field(default=None, description="Error message if failed")
+    data: dict[str, Any] | None = Field(default=None, description="Structured result data")
+
+    # Allow arbitrary payload for now, but discourage it
+    model_config = {"extra": "ignore"}
+
+
+class FileOpResult(ToolResult):
+    """
+    Contract for file manipulation results.
+
+    Used by CoderAgent to verify file writes and edits.
+    """
+    path: str = Field(description="Absolute path to the affected file")
+    operation: str = Field(description="Type of operation: 'create', 'edit', 'delete'")
+    diff: str | None = Field(default=None, description="Unified diff of changes")
+    size_bytes: int | None = Field(default=None, description="Size of file after operation")
+    verification_passed: bool = Field(default=False, description="Whether post-write verification passed")
+
+
+# =============================================================================
+# Worker Context Contract
+# =============================================================================
+
+
+class TaskContext(BaseModel):
+    """
+    Strict context required for worker execution.
+
+    Replaces the 'Mystery Meat' dict context in AgentRunner.
+    """
+    task_id: UUID = Field(description="Unique ID of the task being executed")
+    user_request: str = Field(description="The original user request")
+    repo_path: str = Field(description="Absolute path to the repository")
+    project_context: str | None = Field(default=None, description="RAG context summary")
+
+    # Allow extra fields for flexibility during refactor
+    model_config = {"extra": "allow"}
+
+
+# =============================================================================
 # Core Agent Output - The Explainability Contract
 # =============================================================================
 

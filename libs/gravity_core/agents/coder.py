@@ -353,90 +353,11 @@ class CoderAgent(BaseAgent):
             )
 
             # Step 3: Generate code changes via LLM with tool-calling
-            # RETRY LOOP: Keep prompting until ALL files are created
-            # Clean file paths - strip [NEW] prefix if present
-            remaining_files = set(
-                f.replace("[NEW] ", "").strip() for f in files_affected
+            await self._execute_code_generation_loop(
+                user_prompt=user_prompt,
+                files_affected=files_affected,
+                repo_path=repo_path,
             )
-            max_iterations = 3
-            iteration = 0
-
-            while (remaining_files or iteration == 0) and iteration < max_iterations:
-                iteration += 1
-
-                # Determine tool choice strategy
-                # Default: Require ANY tool
-                current_tool_choice = "required"
-                prompt = user_prompt # Initialize prompt, will be overwritten if iteration > 1
-
-                # RETRY STRATEGY: If this is a retry for missing files, FORCE "create_new_module"
-                if iteration > 1:
-                    logger.warning(
-                        "coder_retry_force_tool",
-                        iteration=iteration,
-                        missing_files=list(remaining_files)
-                    )
-                    current_tool_choice = {
-                        "type": "function",
-                        "function": {"name": "create_new_module"}
-                    }
-                    missing_list = "\n".join(f"  - {f}" for f in sorted(remaining_files))
-                    prompt = f"""## CRITICAL: MISSING FILES
-
-You did NOT create the following files in your previous response:
-{missing_list}
-
-**YOU MUST CREATE EACH OF THESE FILES NOW.**
-
-For each file listed above:
-1. Call `create_new_module` with the full path and complete implementation
-2. Include all imports, docstrings, and real logic
-3. NO placeholders, NO 'pass', NO empty functions
-
-{user_prompt}
-
-⚠️ REMAINING FILES ({len(remaining_files)}): {', '.join(sorted(remaining_files))}"""
-
-                tool_calls = await self._generate_with_tools(
-                    prompt,
-                    tool_choice=current_tool_choice
-                )
-
-                # Track what files the LLM attempted
-                files_in_tool_calls = set()
-                for tc in tool_calls:
-                    if tc.get("name") in ("create_new_module", "edit_file_snippet"):
-                        tc_file = tc.get("arguments", {}).get("file_path", "")
-                        if tc_file:
-                            files_in_tool_calls.add(tc_file)
-
-                logger.info(
-                    "coder_iteration",
-                    iteration=iteration,
-                    remaining_files=list(remaining_files),
-                    tool_call_files=list(files_in_tool_calls),
-                    num_tool_calls=len(tool_calls),
-                )
-
-                # Step 4: Process tool calls into ChangeSets
-                for tool_call in tool_calls:
-                    await self._process_tool_call(tool_call, repo_path)
-
-                # Update remaining files (remove successfully created)
-                created_files = {c.file_path for c in self._changes}
-                remaining_files = remaining_files - created_files - files_in_tool_calls
-
-            # Final validation
-            if remaining_files:
-                logger.error(
-                    "coder_failed_to_create_all_files",
-                    missing=list(remaining_files),
-                    iterations=iteration,
-                )
-                # FAIL hard - don't let incomplete work pass
-                raise RuntimeError(
-                    f"CoderAgent failed to create {len(remaining_files)} files: {', '.join(sorted(remaining_files))}"
-                )
 
             # Step 6: Run linter on affected files
             await self.call_tool("run_linter_fix", path=repo_path)
@@ -485,6 +406,103 @@ For each file listed above:
                 technical_reasoning=json.dumps({"error": str(e)}, indent=2),
                 confidence_score=0.0,
             )
+
+    async def _execute_code_generation_loop(
+        self,
+        user_prompt: str,
+        files_affected: list[str],
+        repo_path: str,
+    ) -> None:
+        """
+        Execute the iterative code generation loop.
+
+        This handles the complexity of checking for missing files and
+        re-prompting the LLM until the mandate is fulfilled.
+        """
+        # Clean file paths - strip [NEW] prefix if present
+        remaining_files = set(
+            f.replace("[NEW] ", "").strip() for f in files_affected
+        )
+        max_iterations = 3
+        iteration = 0
+
+        while (remaining_files or iteration == 0) and iteration < max_iterations:
+            iteration += 1
+
+            # Determine tool choice strategy
+            # Default: Require ANY tool
+            current_tool_choice = "required"
+            prompt = user_prompt # Initialize prompt, will be overwritten if iteration > 1
+
+            # RETRY STRATEGY: If this is a retry for missing files, FORCE "create_new_module"
+            if iteration > 1:
+                logger.warning(
+                    "coder_retry_force_tool",
+                    iteration=iteration,
+                    missing_files=list(remaining_files)
+                )
+                current_tool_choice = {
+                    "type": "function",
+                    "function": {"name": "create_new_module"}
+                }
+                missing_list = "\n".join(f"  - {f}" for f in sorted(remaining_files))
+                prompt = f"""## CRITICAL: MISSING FILES
+
+You did NOT create the following files in your previous response:
+{missing_list}
+
+**YOU MUST CREATE EACH OF THESE FILES NOW.**
+
+For each file listed above:
+1. Call `create_new_module` with the full path and complete implementation
+2. Include all imports, docstrings, and real logic
+3. NO placeholders, NO 'pass', NO empty functions
+
+{user_prompt}
+
+⚠️ REMAINING FILES ({len(remaining_files)}): {', '.join(sorted(remaining_files))}"""
+
+            tool_calls = await self._generate_with_tools(
+                prompt,
+                tool_choice=current_tool_choice
+            )
+
+            # Track what files the LLM attempted
+            files_in_tool_calls = set()
+            for tc in tool_calls:
+                if tc.get("name") in ("create_new_module", "edit_file_snippet"):
+                    tc_file = tc.get("arguments", {}).get("file_path", "")
+                    if tc_file:
+                        files_in_tool_calls.add(tc_file)
+
+            logger.info(
+                "coder_iteration",
+                iteration=iteration,
+                remaining_files=list(remaining_files),
+                tool_call_files=list(files_in_tool_calls),
+                num_tool_calls=len(tool_calls),
+            )
+
+            # Process tool calls into ChangeSets
+            for tool_call in tool_calls:
+                await self._process_tool_call(tool_call, repo_path)
+
+            # Update remaining files (remove successfully created)
+            created_files = {c.file_path for c in self._changes}
+            remaining_files = remaining_files - created_files - files_in_tool_calls
+
+        # Final validation
+        if remaining_files:
+            logger.error(
+                "coder_failed_to_create_all_files",
+                missing=list(remaining_files),
+                iterations=iteration,
+            )
+            # FAIL hard - don't let incomplete work pass
+            raise RuntimeError(
+                f"CoderAgent failed to create {len(remaining_files)} files: {', '.join(sorted(remaining_files))}"
+            )
+
 
     async def _gather_file_context(
         self,
