@@ -26,7 +26,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize database
     await init_db()
 
+    # Initialize Redis EventBus for real-time SSE streaming
+    # This replaces database polling with efficient pub/sub
+    from backend.app.core.events import init_event_bus, shutdown_event_bus
+    try:
+        await init_event_bus()
+        logger.info("redis_event_bus_initialized")
+    except Exception as e:
+        logger.warning("redis_event_bus_init_failed", error=str(e))
+        # Continue without Redis - SSE will still work via initial fetch
+
     yield
+
+    # Cleanup
+    try:
+        await shutdown_event_bus()
+    except Exception:
+        pass
 
     logger.info("application_shutting_down")
 

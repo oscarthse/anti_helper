@@ -190,7 +190,6 @@ class Task(Base):
 
     # Contract / Definition of Done
     definition_of_done: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    retry_count: Mapped[int] = mapped_column(default=0)
 
     # Relationships
     repository: Mapped["Repository"] = relationship(

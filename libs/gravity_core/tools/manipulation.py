@@ -223,6 +223,7 @@ async def create_new_module(
 
     # Write the file
     try:
+        logger.info("create_new_module_writing", path=str(file_path), size=len(content))
         file_path.write_text(content, encoding="utf-8")
 
         # SLEDGEHAMMER VERIFICATION (Protocol Code Red)
@@ -236,6 +237,8 @@ async def create_new_module(
             raise RuntimeError(f"CRITICAL: Wrote 0 bytes to {file_path} but content was not empty. File system may be mocked or corrupted.")
 
     except Exception as e:
+        logger.exception("create_new_module_failed_exception", path=path, error=str(e))
+        # Ensure we return the error
         return {"error": f"Could not write file: {e}", "success": False}
 
     return {

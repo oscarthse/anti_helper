@@ -83,3 +83,19 @@ export interface ChangeSet {
   explanation: string;
   language?: string | null;
 }
+
+/**
+ * Verified file action event - only published after Pydantic validation.
+ * Matches backend VerifiedFileAction schema.
+ */
+export interface VerifiedFileEvent {
+  event_type: "file_verified";
+  task_id: string;
+  step_index: number;
+  file_path: string;
+  file_action: "create" | "update" | "delete";
+  byte_size: number;
+  quality_checks: string[];
+  quality_warnings: string[];
+  timestamp: string;
+}

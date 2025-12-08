@@ -5,7 +5,7 @@
  * Includes streaming support for real-time agent updates.
  */
 
-import type { Task, Repository, AgentLog } from '@/types/schema'
+import type { Task, Repository, AgentLog, VerifiedFileEvent } from '@/types/schema'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -237,6 +237,7 @@ export async function fetchRepositories(): Promise<Repository[]> {
 
 interface StreamCallbacks {
   onLog: (log: AgentLog) => void
+  onFileVerified?: (event: VerifiedFileEvent) => void  // Verified file events
   onError: (error: Error) => void
   onComplete: () => void
 }
@@ -268,6 +269,16 @@ export async function subscribeToTaskStream(
   eventSource.addEventListener('complete', () => {
     callbacks.onComplete()
     eventSource.close()
+  })
+
+  // Handle verified file events (from backend VerifiedFileAction)
+  eventSource.addEventListener('file_verified', (event) => {
+    try {
+      const fileEvent = JSON.parse(event.data) as VerifiedFileEvent
+      callbacks.onFileVerified?.(fileEvent)
+    } catch (error) {
+      console.error('Failed to parse file_verified event:', error)
+    }
   })
 
   eventSource.addEventListener('error', () => {

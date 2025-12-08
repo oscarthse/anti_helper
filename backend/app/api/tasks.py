@@ -10,11 +10,11 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.db import Repository, Task, TaskStatus, get_session
+from backend.app.db import Repository, Task, TaskStatus, TaskDependency, get_session
 
 logger = structlog.get_logger()
 
@@ -370,8 +370,16 @@ async def delete_task(
     session: AsyncSession = Depends(get_session),
 ) -> None:
     """
-    Delete a task and its associated logs.
+    Delete a task and ALL associated data:
+    - All subtasks (child tasks)
+    - All agent logs
+    - All knowledge nodes
+    - All task dependencies
+
+    This is a complete removal - as if the task never existed.
     """
+    from backend.app.db import AgentLog, KnowledgeNode
+
     result = await session.execute(
         select(Task).where(Task.id == task_id)
     )
@@ -383,13 +391,47 @@ async def delete_task(
             detail=f"Task {task_id} not found",
         )
 
-    # Manually delete dependencies first to avoid FK constraints if ondelete=CASCADE is missing
+    # Get all subtask IDs (recursive via parent_task_id)
+    subtask_ids_result = await session.execute(
+        select(Task.id).where(Task.parent_task_id == task_id)
+    )
+    subtask_ids = [row[0] for row in subtask_ids_result.fetchall()]
+
+    # All task IDs to delete (root + subtasks)
+    all_task_ids = [task_id] + subtask_ids
+
+    logger.info(
+        "deleting_task_cascade",
+        root_task_id=str(task_id),
+        subtask_count=len(subtask_ids),
+        total_tasks=len(all_task_ids),
+    )
+
+    # 1. Delete agent logs for all tasks
+    await session.execute(
+        delete(AgentLog).where(AgentLog.task_id.in_(all_task_ids))
+    )
+
+    # 2. Delete knowledge nodes for all tasks
+    await session.execute(
+        delete(KnowledgeNode).where(KnowledgeNode.task_id.in_(all_task_ids))
+    )
+
+    # 3. Delete dependencies involving any of these tasks
     await session.execute(
         delete(TaskDependency).where(
-            (TaskDependency.blocker_task_id == task_id) |
-            (TaskDependency.blocked_task_id == task_id)
+            (TaskDependency.blocker_task_id.in_(all_task_ids)) |
+            (TaskDependency.blocked_task_id.in_(all_task_ids))
         )
     )
 
+    # 4. Delete subtasks first (FK constraint)
+    await session.execute(
+        delete(Task).where(Task.parent_task_id == task_id)
+    )
+
+    # 5. Delete root task
     await session.delete(task)
     await session.commit()
+
+    logger.info("task_deleted_completely", task_id=str(task_id))

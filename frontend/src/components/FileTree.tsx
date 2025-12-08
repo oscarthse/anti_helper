@@ -16,9 +16,10 @@ interface FileNode {
 interface FileTreeProps {
   repoId: string
   className?: string
+  refreshTrigger?: number  // Increment to force refresh
 }
 
-export function FileTree({ repoId, className }: FileTreeProps) {
+export function FileTree({ repoId, className, refreshTrigger = 0 }: FileTreeProps) {
   const [tree, setTree] = useState<FileNode[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -39,7 +40,7 @@ export function FileTree({ repoId, className }: FileTreeProps) {
 
   useEffect(() => {
     loadTree()
-  }, [repoId])
+  }, [repoId, refreshTrigger])  // Re-fetch when refreshTrigger changes
 
   if (isLoading) {
     return (

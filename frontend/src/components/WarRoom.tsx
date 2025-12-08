@@ -8,7 +8,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { Task, AgentLog, TaskPlan } from '@/types/schema'
+import type { Task, AgentLog, TaskPlan, VerifiedFileEvent } from '@/types/schema'
 import { subscribeToTaskStream, approveTaskPlan, pauseTask, resumeTask, deleteTask } from '@/lib/api'
 import { TaskPlanView } from './TaskPlanView'
 import { AgentCard } from './AgentCard'
@@ -38,6 +38,8 @@ export function WarRoom({ task }: WarRoomProps) {
   const [isConnected, setIsConnected] = useState(false)
   const [isReconnecting, setIsReconnecting] = useState(false)
   const [currentStep, setCurrentStep] = useState(task.current_step || 0)
+  const [fileTreeRefreshTrigger, setFileTreeRefreshTrigger] = useState(0)
+  const [verifiedSteps, setVerifiedSteps] = useState<Set<number>>(new Set())  // Track steps with verified files
 
   // Prefer WebSocket status, fallback to props
   const [taskStatus, setTaskStatus] = useState(liveTaskNode?.status?.toLowerCase() || task.status?.toLowerCase() || 'pending')
@@ -157,6 +159,30 @@ export function WarRoom({ task }: WarRoomProps) {
             if (log.step_number > currentStep) {
               setCurrentStep(log.step_number)
             }
+
+            // Refresh FileTree when coder agents complete (they create/modify files)
+            if (log.agent_persona?.startsWith('coder')) {
+              setFileTreeRefreshTrigger(prev => prev + 1)
+            }
+          },
+          // VERIFIED FILE EVENTS: These are guaranteed to exist on disk
+          onFileVerified: (event) => {
+            // Track this step as having verified files
+            setVerifiedSteps(prev => {
+              const next = new Set(Array.from(prev))
+              next.add(event.step_index)
+              return next
+            })
+
+            // Update current step if this is a newer step
+            if (event.step_index > currentStep) {
+              setCurrentStep(event.step_index)
+            }
+
+            // Always refresh file tree when files are verified
+            setFileTreeRefreshTrigger(prev => prev + 1)
+
+            console.log('[WarRoom] Verified file:', event.file_path, 'step:', event.step_index)
           },
           onError: (error) => {
             console.error('SSE Error:', error)
@@ -449,7 +475,7 @@ export function WarRoom({ task }: WarRoomProps) {
 
           {/* File Tree (Protocol: Truth) */}
           <div className="h-1/3 min-h-[200px] border-b border-slate-800 overflow-auto bg-slate-950/20">
-            <FileTree repoId={task.repo_id} className="p-2" />
+            <FileTree repoId={task.repo_id} className="p-2" refreshTrigger={fileTreeRefreshTrigger} />
           </div>
 
           {/* Diff Viewer */}

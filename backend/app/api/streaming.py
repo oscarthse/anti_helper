@@ -1,13 +1,29 @@
 """
-Streaming API - Real-time Updates via SSE
+Streaming API - Real-time Updates via SSE (Redis Pub/Sub)
 
 Server-Sent Events for pushing agent progress to the frontend.
+
+ARCHITECTURE CHANGE (December 2025):
+Previously, this module used database polling, which caused QueuePool exhaustion.
+Now it uses Redis Pub/Sub:
+
+OLD (BROKEN):
+    while True:
+        task = await db.execute(select(Task))  # DB connection held FOREVER
+        await asyncio.sleep(1)
+
+NEW (FIXED):
+    # 1. Fetch initial data (quick DB query, then release connection)
+    # 2. Subscribe to Redis channel (no DB connection)
+    # 3. Yield events from Redis (lightweight)
+
+This eliminates the connection leak that caused:
+    sqlalchemy.exc.TimeoutError: QueuePool limit of size 10 overflow 20 reached
 """
 
 import asyncio
 import json
 from collections.abc import AsyncGenerator
-from datetime import datetime
 from uuid import UUID
 
 import structlog
@@ -16,7 +32,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
-from backend.app.db import AgentLog, Task, get_session
+from backend.app.core.events import (
+    Event,
+    get_event_bus,
+    global_channel,
+    task_channel,
+)
+from backend.app.db import AgentLog, Task, TaskStatus, get_session
 
 logger = structlog.get_logger()
 
@@ -24,181 +46,155 @@ router = APIRouter()
 
 
 # =============================================================================
-# Event Types
+# SSE Event Helpers
 # =============================================================================
 
 
-class SSEEvent:
-    """Represents an SSE event."""
+def sse_event(event: str, data: dict, id: str | None = None) -> dict:
+    """Create an SSE event dict."""
+    return {
+        "event": event,
+        "data": json.dumps(data),
+        "id": id,
+    }
 
-    def __init__(
-        self,
-        event: str,
-        data: dict,
-        id: str | None = None,
-    ) -> None:
-        self.event = event
-        self.data = data
-        self.id = id
 
-    def to_dict(self) -> dict:
-        return {
-            "event": self.event,
-            "data": json.dumps(self.data),
-            "id": self.id,
+# =============================================================================
+# Initial Data Fetch (Quick DB Query, Then Release)
+# =============================================================================
+
+
+async def fetch_initial_task_state(
+    task_id: UUID,
+    session: AsyncSession,
+    last_log_id: UUID | None = None,
+) -> tuple[dict | None, list[dict]]:
+    """
+    Fetch initial task state and any missed logs.
+
+    This is a ONE-TIME query. The DB connection is released after this returns.
+    All subsequent updates come from Redis pub/sub.
+
+    Returns:
+        Tuple of (task_state, missed_logs)
+    """
+    # Get task
+    result = await session.execute(
+        select(Task).where(Task.id == task_id)
+    )
+    task = result.scalar_one_or_none()
+
+    if not task:
+        return None, []
+
+    task_state = {
+        "task_id": str(task_id),
+        "status": task.status.value,
+        "current_agent": task.current_agent,
+        "current_step": task.current_step,
+    }
+
+    # Get any logs created after last_log_id (for reconnection)
+    log_query = (
+        select(AgentLog)
+        .where(AgentLog.task_id == task_id)
+        .order_by(AgentLog.created_at)
+    )
+    if last_log_id:
+        log_query = log_query.where(AgentLog.id > last_log_id)
+
+    log_result = await session.execute(log_query)
+    logs = log_result.scalars().all()
+
+    missed_logs = [
+        {
+            "id": str(log.id),
+            "task_id": str(task_id),
+            "agent_persona": log.agent_persona,
+            "step_number": log.step_number,
+            "ui_title": log.ui_title,
+            "ui_subtitle": log.ui_subtitle,
+            "confidence_score": log.confidence_score,
+            "requires_review": log.requires_review,
+            "created_at": log.created_at.isoformat(),
         }
+        for log in logs
+    ]
+
+    return task_state, missed_logs
 
 
 # =============================================================================
-# SSE Generators
+# SSE Generators (Redis-Based, Zero DB Usage)
 # =============================================================================
 
 
 async def task_event_generator(
     task_id: UUID,
-    session: AsyncSession,
-    last_event_id: str | None = None,
+    initial_state: dict,
+    missed_logs: list[dict],
 ) -> AsyncGenerator[dict, None]:
     """
     Generate SSE events for a task's progress.
 
-    This polls the database for new agent logs and status changes.
-    In production, this would use Redis pub/sub or PostgreSQL LISTEN/NOTIFY.
+    CRITICAL: This generator does NOT use any database connections.
+    It only reads from Redis pub/sub.
+
+    Flow:
+    1. Yield initial state (from pre-fetched data)
+    2. Yield any missed logs (from pre-fetched data)
+    3. Subscribe to Redis and yield new events
     """
     logger.info("sse_stream_started", task_id=str(task_id))
 
-    last_log_id = None
-    if last_event_id:
-        try:
-            last_log_id = UUID(last_event_id)
-        except ValueError:
-            pass
+    # 1. Yield initial status
+    yield sse_event("status", initial_state)
 
-    last_status = None
+    # 2. Yield any missed logs (for reconnection support)
+    for log in missed_logs:
+        yield sse_event("agent_log", log, id=log["id"])
+
+    # 3. Subscribe to Redis channel and yield events
+    event_bus = get_event_bus()
+    channel = task_channel(str(task_id))
 
     try:
-        while True:
-            # Get current task state
-            result = await session.execute(
-                select(Task).where(Task.id == task_id)
+        async for event in event_bus.subscribe(channel):
+            # Convert Redis event to SSE event
+            yield sse_event(
+                event=event.event_type,
+                data=event.data,
+                id=event.data.get("id"),
             )
-            task = result.scalar_one_or_none()
 
-            if not task:
-                yield SSEEvent(
-                    event="error",
-                    data={"message": f"Task {task_id} not found"},
-                ).to_dict()
+            # Check for completion
+            if event.event_type == "complete":
+                logger.info("sse_stream_complete", task_id=str(task_id))
                 break
-
-            # Emit status change event
-            if task.status != last_status:
-                yield SSEEvent(
-                    event="status",
-                    data={
-                        "task_id": str(task_id),
-                        "status": task.status.value,
-                        "current_agent": task.current_agent,
-                        "current_step": task.current_step,
-                    },
-                ).to_dict()
-                last_status = task.status
-
-            # Get new agent logs
-            log_query = (
-                select(AgentLog)
-                .where(AgentLog.task_id == task_id)
-                .order_by(AgentLog.created_at)
-            )
-            if last_log_id:
-                log_query = log_query.where(AgentLog.id > last_log_id)
-
-            log_result = await session.execute(log_query)
-            new_logs = log_result.scalars().all()
-
-            for log in new_logs:
-                yield SSEEvent(
-                    event="agent_log",
-                    data={
-                        "id": str(log.id),
-                        "task_id": str(task_id),
-                        "agent_persona": log.agent_persona,
-                        "step_number": log.step_number,
-                        "ui_title": log.ui_title,
-                        "ui_subtitle": log.ui_subtitle,
-                        "confidence_score": log.confidence_score,
-                        "requires_review": log.requires_review,
-                        "created_at": log.created_at.isoformat(),
-                    },
-                    id=str(log.id),
-                ).to_dict()
-                last_log_id = log.id
-
-            # Check if task is complete
-            if task.status in [task.status.COMPLETED, task.status.FAILED]:
-                yield SSEEvent(
-                    event="complete",
-                    data={
-                        "task_id": str(task_id),
-                        "status": task.status.value,
-                        "completed_at": (
-                            task.completed_at.isoformat()
-                            if task.completed_at
-                            else None
-                        ),
-                    },
-                ).to_dict()
-                break
-
-            # Poll interval
-            await asyncio.sleep(1)
 
     except asyncio.CancelledError:
         logger.info("sse_stream_cancelled", task_id=str(task_id))
         raise
 
 
-async def global_event_generator(
-    session: AsyncSession,
-) -> AsyncGenerator[dict, None]:
+async def global_event_generator() -> AsyncGenerator[dict, None]:
     """
     Generate SSE events for all task activity.
 
-    Useful for dashboard views showing all agent activity.
+    CRITICAL: This generator does NOT use any database connections.
+    It subscribes to the global Redis channel.
     """
     logger.info("global_sse_stream_started")
 
-    last_check = datetime.utcnow()
+    event_bus = get_event_bus()
 
     try:
-        while True:
-            # Get recent activity
-            result = await session.execute(
-                select(AgentLog)
-                .where(AgentLog.created_at > last_check)
-                .order_by(AgentLog.created_at)
-                .limit(50)
+        async for event in event_bus.subscribe(global_channel()):
+            yield sse_event(
+                event=event.event_type,
+                data=event.data,
+                id=event.data.get("id"),
             )
-            new_logs = result.scalars().all()
-
-            for log in new_logs:
-                yield SSEEvent(
-                    event="agent_log",
-                    data={
-                        "id": str(log.id),
-                        "task_id": str(log.task_id),
-                        "agent_persona": log.agent_persona,
-                        "ui_title": log.ui_title,
-                        "ui_subtitle": log.ui_subtitle,
-                        "created_at": log.created_at.isoformat(),
-                    },
-                    id=str(log.id),
-                ).to_dict()
-
-            if new_logs:
-                last_check = new_logs[-1].created_at
-
-            await asyncio.sleep(2)
 
     except asyncio.CancelledError:
         logger.info("global_sse_stream_cancelled")
@@ -226,28 +222,40 @@ async def stream_task_events(
     - error: An error occurred
 
     Supports reconnection via Last-Event-ID header.
+
+    ARCHITECTURE:
+    1. Quick initial fetch (DB connection used and RELEASED)
+    2. SSE generator (uses Redis only, no DB)
     """
-    # Verify task exists
-    result = await session.execute(
-        select(Task).where(Task.id == task_id)
+    # Parse last_event_id for reconnection
+    last_log_id = None
+    if last_event_id:
+        try:
+            last_log_id = UUID(last_event_id)
+        except ValueError:
+            pass
+
+    # ONE-TIME DB query - connection is released after this
+    initial_state, missed_logs = await fetch_initial_task_state(
+        task_id, session, last_log_id
     )
-    if not result.scalar_one_or_none():
+
+    if initial_state is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+    # Return SSE response (generator uses Redis only)
     return EventSourceResponse(
-        task_event_generator(task_id, session, last_event_id)
+        task_event_generator(task_id, initial_state, missed_logs)
     )
 
 
 @router.get("/global")
-async def stream_global_events(
-    session: AsyncSession = Depends(get_session),
-) -> EventSourceResponse:
+async def stream_global_events() -> EventSourceResponse:
     """
     Stream real-time events for all task activity.
 
     Useful for dashboards monitoring all agent operations.
+
+    NOTE: No database dependency - streams directly from Redis.
     """
-    return EventSourceResponse(
-        global_event_generator(session)
-    )
+    return EventSourceResponse(global_event_generator())

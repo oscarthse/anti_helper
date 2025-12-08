@@ -659,14 +659,13 @@ Respond ONLY with the JSON object."""
         model_name: str | None = None,
         system_prompt: str | None = None,
         temperature: float = 0.3,
+        tool_choice: str | dict = "auto",
     ) -> tuple[str | None, list[dict]]:
         """
         Generate response with potential tool calls.
 
-        Returns:
-            Tuple of (text_response, tool_calls)
-            - text_response: Any text content (may be None)
-            - tool_calls: List of tool call dicts with 'name' and 'arguments'
+        Args:
+            tool_choice: "auto", "required", "none", or specific tool dict
         """
         provider = self._get_provider_for_model(model_name or "")
         if model_name is None:
@@ -687,24 +686,37 @@ Respond ONLY with the JSON object."""
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        response = await self._openai_client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            temperature=temperature,
-            tools=self._format_tools_for_openai(tools),
-            tool_choice="auto",
-        )
+        try:
+            response = await self._openai_client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                temperature=temperature,
+                tools=self._format_tools_for_openai(tools),
+                tool_choice=tool_choice,
+            )
 
-        message = response.choices[0].message
-        text_response = message.content
-        tool_calls = []
+            message = response.choices[0].message
+            text_response = message.content
+            tool_calls = []
 
-        if message.tool_calls:
-            for tc in message.tool_calls:
-                tool_calls.append({
-                    "id": tc.id,
-                    "name": tc.function.name,
-                    "arguments": json.loads(tc.function.arguments),
-                })
+            if message.tool_calls:
+                for tc in message.tool_calls:
+                    tool_calls.append({
+                        "id": tc.id,
+                        "name": tc.function.name,
+                        "arguments": json.loads(tc.function.arguments),
+                    })
 
-        return text_response, tool_calls
+            return text_response, tool_calls
+
+        except OpenAIAPIError as e:
+            # Capture specific tool usage errors
+            logger.error(
+                "llm_tool_call_failed",
+                model=model_name,
+                tool_choice=str(tool_choice),
+                error=str(e),
+                status_code=getattr(e, "status_code", None),
+            )
+            # Raise or handle? Raise for now so the agent sees it failed.
+            raise LLMProviderError(f"Tool call failed: {e}", provider="openai")
