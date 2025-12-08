@@ -211,7 +211,7 @@ async def execute_task(
 
     # Update status
     task.status = TaskStatus.PLANNING
-    await session.flush()
+    await session.commit()
 
     # Dispatch to worker
     from backend.app.workers.agent_runner import run_task
@@ -248,6 +248,7 @@ async def cancel_task(
 
     task.status = TaskStatus.FAILED
     task.error_message = "Cancelled by user"
+    await session.commit()
 
     logger.info("task_cancelled", task_id=str(task_id))
 
@@ -272,13 +273,15 @@ async def approve_task_plan(
             detail=f"Task {task_id} not found",
         )
 
-    if task.status != TaskStatus.PLAN_REVIEW:
+    # Accept both review states
+    if task.status not in (TaskStatus.PLAN_REVIEW, TaskStatus.REVIEW_REQUIRED):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Task is not awaiting plan approval (status: {task.status})",
         )
 
     task.status = TaskStatus.EXECUTING
+    await session.commit()
 
     # Resume worker execution
     from backend.app.workers.agent_runner import resume_task
@@ -287,3 +290,26 @@ async def approve_task_plan(
     logger.info("task_plan_approved", task_id=str(task_id))
 
     return {"message": "Plan approved, execution continuing", "task_id": str(task_id)}
+
+
+@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_task(
+    task_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """
+    Delete a task and its associated logs.
+    """
+    result = await session.execute(
+        select(Task).where(Task.id == task_id)
+    )
+    task = result.scalar_one_or_none()
+
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task {task_id} not found",
+        )
+
+    await session.delete(task)
+    await session.commit()

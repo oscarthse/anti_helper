@@ -16,10 +16,22 @@ Key Responsibilities:
 
 from __future__ import annotations
 
+import sys
+import os
+from pathlib import Path
+
+# Ensure libs directory is in python path for gravity_core imports
+# This assumes the worker is running from project root or similar structure
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+libs_path = project_root / "libs"
+if str(libs_path) not in sys.path:
+    sys.path.append(str(libs_path))
+
 import asyncio
 import json
 import traceback
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
 from uuid import UUID
 
 import dramatiq
@@ -40,20 +52,6 @@ logger = structlog.get_logger(__name__)
 # Configure Redis broker for Dramatiq
 redis_broker = RedisBroker(url=settings.redis_url)
 dramatiq.set_broker(redis_broker)
-
-# Create async engine specifically for worker processes
-# (separate from the main API engine to avoid connection pool conflicts)
-worker_engine = create_async_engine(
-    settings.database_url,
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
-)
-worker_session_factory = async_sessionmaker(
-    worker_engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
 
 
 # =============================================================================
@@ -501,7 +499,7 @@ async def _run_execution_phase(
     # Mark as completed
     task.status = TaskStatus.COMPLETED
     task.current_agent = None
-    task.completed_at = datetime.now(UTC)
+    task.completed_at = datetime.utcnow()
     await session.commit()
 
     logger.info(
@@ -652,26 +650,30 @@ async def _run_task_async(task_id: str) -> None:
             # Step 2: PLANNING PHASE
             # =================================================================
 
-            success, error = await _run_planning_phase(
-                session=session,
-                task=task,
-                repo=repo,
-                context=context,
-            )
-
-            if not success:
-                task.status = TaskStatus.FAILED
-                task.error_message = error
-                await session.commit()
-                return
-
-            # If status is PLAN_REVIEW, we stop here and wait for approval
-            if task.status == TaskStatus.PLAN_REVIEW:
-                logger.info(
-                    "workflow_paused_for_review",
-                    task_id=task_id,
+            # Skip planning if we are already executed/verified
+            if task.status == TaskStatus.EXECUTING and task.task_plan:
+                logger.info("skipping_planning_already_verified", task_id=task_id)
+            else:
+                success, error = await _run_planning_phase(
+                    session=session,
+                    task=task,
+                    repo=repo,
+                    context=context,
                 )
-                return
+
+                if not success:
+                    task.status = TaskStatus.FAILED
+                    task.error_message = error
+                    await session.commit()
+                    return
+
+                # If status is PLAN_REVIEW, we stop here and wait for approval
+                if task.status == TaskStatus.PLAN_REVIEW:
+                    logger.info(
+                        "workflow_paused_for_review",
+                        task_id=task_id,
+                    )
+                    return
 
             # =================================================================
             # Step 3: EXECUTION PHASE (Code → Test → Fix Loop)
@@ -713,7 +715,7 @@ async def _run_task_async(task_id: str) -> None:
                 task.status = TaskStatus.FAILED
                 task.error_message = f"{type(e).__name__}: {str(e)}"
                 task.retry_count += 1
-                task.updated_at = datetime.now(UTC)
+                task.updated_at = datetime.utcnow()
 
                 # Log the crash to AgentLog for SSE visibility
                 try:
@@ -774,22 +776,191 @@ def resume_task(task_id: str, approved: bool = True) -> None:
     asyncio.run(_resume_task_async(task_id, approved))
 
 
+async def _create_worker_engine():
+    """Create an isolated engine for the current asyncio loop."""
+    return create_async_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=10,
+    )
+
+
 async def _resume_task_async(task_id: str, approved: bool) -> None:
     """Resume a paused task after review."""
     from backend.app.db.models import TaskStatus
 
-    async with worker_session_factory() as session:
-        task = await _get_task(session, task_id)
-        if not task:
-            logger.error("resume_task_not_found", task_id=task_id)
-            return
+    engine = await _create_worker_engine()
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    try:
+        async with session_factory() as session:
+            task = await _get_task(session, task_id)
+            if not task:
+                logger.error("resume_task_not_found", task_id=task_id)
+                return
+
+            if approved:
+                task.status = TaskStatus.EXECUTING
+                logger.info("task_resumed_approved", task_id=task_id)
+            else:
+                task.status = TaskStatus.FAILED
+                task.error_message = "Plan rejected by user"
+                logger.info("task_resume_rejected", task_id=task_id)
+
+            await session.commit()
 
         if approved:
-            task.status = TaskStatus.EXECUTING
-            logger.info("task_resumed_approved", task_id=task_id)
-        else:
-            task.status = TaskStatus.FAILED
-            task.error_message = "Plan rejected by user"
-            logger.info("task_resume_rejected", task_id=task_id)
+            # Re-enter the main execution loop
+            # The loop will skip planning because status is EXECUTING
+            await _run_task_async(task_id)
+    finally:
+        await engine.dispose()
 
-        await session.commit()
+
+# =============================================================================
+# Main Orchestration Loop
+# =============================================================================
+
+
+async def _run_task_async(task_id: str) -> None:
+    """
+    Execute the complete agent workflow for a task.
+
+    Pipeline:
+    1. INITIALIZATION - Load Task and Repository
+    2. PLANNING - PlannerAgent creates TaskPlan
+    3. STATE CHECK - Determine if review needed
+    4. (Future) EXECUTION - Coder agents execute steps
+    5. (Future) TESTING - QA agent runs tests
+    6. (Future) DOCUMENTATION - Docs agent updates docs
+    """
+    from backend.app.db.models import TaskStatus
+
+    logger.info("worker_task_started", task_id=task_id)
+
+    # Create engine local to this loop
+    engine = await _create_worker_engine()
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    try:
+        async with session_factory() as session:
+            task = None
+
+            try:
+                # =================================================================
+                # Step 1: INITIALIZATION - Load Task and Repository
+                # =================================================================
+
+                task = await _get_task(session, task_id)
+                if not task:
+                    logger.error("task_not_found", task_id=task_id)
+                    return
+
+                repo = await _get_repository(session, task.repo_id)
+                if not repo:
+                    task.status = TaskStatus.FAILED
+                    task.error_message = "Repository not found"
+                    await session.commit()
+                    logger.error(
+                        "repository_not_found",
+                        task_id=task_id,
+                        repo_id=str(task.repo_id),
+                    )
+                    return
+
+                # Build execution context
+                context = {
+                    "user_request": task.user_request,
+                    "repo_path": repo.path,
+                }
+
+                # =================================================================
+                # Step 2: PLANNING PHASE
+                # =================================================================
+
+                # Skip planning if we are already executed/verified
+                if task.status == TaskStatus.EXECUTING and task.task_plan:
+                    logger.info("skipping_planning_already_verified", task_id=task_id)
+                else:
+                    success, error = await _run_planning_phase(
+                        session=session,
+                        task=task,
+                        repo=repo,
+                        context=context,
+                    )
+
+                    if not success:
+                        task.status = TaskStatus.FAILED
+                        task.error_message = error
+                        await session.commit()
+                        return
+
+                # If status is PLAN_REVIEW, we stop here and wait for approval
+                if task.status == TaskStatus.PLAN_REVIEW:
+                    logger.info(
+                        "workflow_paused_for_review",
+                        task_id=task_id,
+                    )
+                    return
+
+                # =================================================================
+                # Step 3: EXECUTION PHASE (Code → Test → Fix Loop)
+                # =================================================================
+
+                success, error = await _run_execution_phase(
+                    session=session,
+                    task=task,
+                    repo=repo,
+                    context=context,
+                )
+
+                if not success:
+                    task.status = TaskStatus.FAILED
+                    task.error_message = error
+                    await session.commit()
+                    return
+
+                logger.info(
+                    "workflow_complete",
+                    task_id=task_id,
+                    status=task.status.value,
+                )
+
+            except Exception as e:
+                # =================================================================
+                # GRACEFUL FAILURE HANDLING
+                # =================================================================
+
+                logger.exception(
+                    "worker_task_error",
+                    task_id=task_id,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                )
+
+                # Update task status to FAILED
+                if task:
+                    task.status = TaskStatus.FAILED
+                    task.error_message = f"{type(e).__name__}: {str(e)}"
+                    task.retry_count += 1
+                    task.updated_at = datetime.utcnow()
+
+                    # Log the crash to AgentLog for SSE visibility
+                    try:
+                        await log_system_error(
+                            session=session,
+                            task_id=task.id,
+                            error=e,
+                            error_context="Worker orchestration failed",
+                        )
+                    except Exception as log_error:
+                        logger.error(
+                            "failed_to_log_system_error",
+                            task_id=task_id,
+                            log_error=str(log_error),
+                        )
+
+                    await session.commit()
+    finally:
+        await engine.dispose()

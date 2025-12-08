@@ -68,9 +68,9 @@ Assign each step to the correct specialist:
 - `planner` - Only for analysis steps (you rarely assign to yourself)
 - `coder_be` - Backend Python/database changes
 - `coder_fe` - Frontend TypeScript/React changes
-- `coder_infra` - Docker, CI/CD, deployment
+- `coder_infra` - Infrastructure, Docker, CI/CD, and NEW documentation files (README, etc.)
 - `qa` - Testing and verification
-- `docs` - Documentation updates
+- `docs` - Updates to EXISTING documentation only (cannot create files)
 
 ### 4. Affected Files
 For each step, explicitly list which files will be modified:

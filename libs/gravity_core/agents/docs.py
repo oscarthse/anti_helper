@@ -341,7 +341,8 @@ class DocsAgent(BaseAgent):
         )
 
         # Generate documentation via LLM with tools
-        response = await self.llm_client.generate_with_tools(
+        # generate_with_tools returns (text_response, tool_calls) tuple
+        _, tool_calls = await self.llm_client.generate_with_tools(
             prompt=prompt,
             system_prompt=DOCS_SYSTEM_PROMPT,
             tools=DOCS_TOOLS,
@@ -349,7 +350,7 @@ class DocsAgent(BaseAgent):
             tool_choice="auto",
         )
 
-        return response.get("tool_calls", [])
+        return tool_calls if isinstance(tool_calls, list) else []
 
     def _build_doc_prompt(
         self,

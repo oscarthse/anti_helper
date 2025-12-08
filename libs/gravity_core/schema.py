@@ -119,8 +119,14 @@ class AgentOutput(BaseModel):
 
     @property
     def requires_review(self) -> bool:
-        """Check if this output requires human review based on confidence."""
-        return self.confidence_score < 0.7
+        """Check if this output requires human review based on confidence.
+
+        Only require review for VERY low confidence (likely system errors).
+        For simple projects, execution should flow automatically.
+        Human review is primarily for initial plan approval.
+        """
+        # Only pause for likely errors (< 10% confidence)
+        return self.confidence_score < 0.1
 
 
 # =============================================================================
@@ -156,7 +162,7 @@ class TaskPlan(BaseModel):
     which agents should execute each step, and in what order.
     """
 
-    task_id: UUID = Field(default_factory=uuid4)
+    task_id: str = Field(default_factory=lambda: str(uuid4()))
     summary: str = Field(description="High-level description of the plan")
     steps: list[TaskStep] = Field(description="Ordered list of steps to execute")
     estimated_complexity: int = Field(

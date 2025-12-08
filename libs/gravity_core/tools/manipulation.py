@@ -153,6 +153,8 @@ async def create_new_module(
     """
     Create a new file with proper directory structure.
     """
+    import os
+
     logger.info("create_new_module", path=path)
 
     file_path = Path(path)
@@ -166,22 +168,53 @@ async def create_new_module(
         }
 
     # Create parent directories
-    file_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+    except PermissionError as e:
+        return {"error": f"Permission denied creating directory: {e}", "success": False}
 
-    # Create __init__.py files for Python packages
+    # Define safe boundaries for __init__.py creation
+    # Stop at these directories and don't go above them
+    safe_boundaries = {
+        Path.home(),
+        Path("/"),
+        Path("/Users"),
+        Path("/home"),
+        Path("/tmp"),
+        Path("/var"),
+    }
+
+    # Create __init__.py files for Python packages (with safety limits)
     init_files_created = []
     if create_init and file_path.suffix == ".py":
         current = file_path.parent
-        while current != current.parent:
-            init_path = current / "__init__.py"
-            if not init_path.exists():
-                init_path.touch()
-                init_files_created.append(str(init_path))
+        max_depth = 10  # Safety limit to prevent infinite loops
+        depth = 0
+
+        while current != current.parent and depth < max_depth:
+            # Stop at safe boundaries
+            if current in safe_boundaries or current.resolve() in safe_boundaries:
+                break
 
             # Stop at common project roots
-            if (current / "pyproject.toml").exists() or (current / "setup.py").exists():
+            if (current / "pyproject.toml").exists() or \
+               (current / "setup.py").exists() or \
+               (current / ".git").exists() or \
+               (current / "package.json").exists():
                 break
+
+            init_path = current / "__init__.py"
+            if not init_path.exists():
+                try:
+                    init_path.touch()
+                    init_files_created.append(str(init_path))
+                except PermissionError:
+                    # Can't create here - stop ascending
+                    logger.warning("permission_denied_init", path=str(init_path))
+                    break
+
             current = current.parent
+            depth += 1
 
     # Write the file
     try:

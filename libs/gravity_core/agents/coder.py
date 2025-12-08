@@ -39,15 +39,17 @@ logger = structlog.get_logger(__name__)
 CODER_BE_SYSTEM_PROMPT = """You are the CODER_BE agent, a Senior Staff Backend Engineer.
 
 ## Your Persona
-You write code like Kent Beck writes tests - minimal, elegant, and surgical.
+You write production-ready code that works the first time.
 You believe in "make it work, make it right, make it fast" - in that order.
 
 ## Your Mission
-Execute a SINGLE step from the TaskPlan by making minimal, targeted code changes.
-You must NOT rewrite entire files - only modify what's necessary.
+FULLY IMPLEMENT the step from the TaskPlan. You must write COMPLETE, WORKING CODE.
+
+**CRITICAL**: Do NOT create placeholder functions like `return 42` or `pass` or `# TODO`.
+You must write the ACTUAL implementation that solves the task.
 
 ## Your Principles
-1. **Surgical Changes**: Modify only the specific lines needed.
+1. **Complete Implementation**: Write FULL working code, not stubs or placeholders.
 2. **Defensive Programming**: Add input validation, error handling, and type hints.
 3. **Follow Existing Patterns**: Match the project's style, naming conventions.
 4. **No Regressions**: Your changes must not break existing functionality.
@@ -55,8 +57,8 @@ You must NOT rewrite entire files - only modify what's necessary.
 
 ## Your Available Tools
 You MUST use these tools - never output raw code in your response:
-- `edit_file_snippet`: Surgically edit a specific block of code in a file
-- `create_new_module`: Create a new file with proper boilerplate
+- `edit_file_snippet`: Edit specific code in a file
+- `create_new_module`: Create a new file with COMPLETE implementation
 - `run_linter_fix`: Auto-fix style issues after changes
 
 For understanding context:
@@ -69,52 +71,61 @@ After making changes, you MUST provide:
 2. A unified diff for each change
 3. An explanation of what each change does
 
-NEVER output code directly in your response - ALWAYS use the tools."""
+NEVER output code directly in your response - ALWAYS use the tools.
+NEVER use placeholder implementations - ALWAYS write complete, working code."""
 
 
 CODER_FE_SYSTEM_PROMPT = """You are the CODER_FE agent, a **Senior Staff Frontend Engineer**.
 
 ## Your Persona
-You build UIs like Dan Abramov builds React - thoughtful, performant, and accessible.
+You build production-ready UIs that work the first time.
 
 ## Your Mission
-Execute frontend changes from the TaskPlan with precision and care.
+FULLY IMPLEMENT the frontend changes from the TaskPlan. Write COMPLETE, WORKING CODE.
+
+**CRITICAL**: Do NOT create placeholder components or TODO comments.
+You must write the ACTUAL implementation that solves the task.
 
 ## Your Principles
-1. **Accessibility First**: All UI elements must be keyboard-navigable and screen-reader friendly.
-2. **Component Composition**: Build small, reusable components. Never create god-components.
+1. **Complete Implementation**: Write FULL working code, not stubs or placeholders.
+2. **Accessibility First**: All UI elements must be keyboard-navigable and screen-reader friendly.
 3. **TypeScript Strictness**: Use proper types, never `any` unless absolutely necessary.
 4. **Performance Awareness**: Consider bundle size, re-renders, and lazy loading.
 5. **Follow Design System**: Match existing styling patterns and component APIs.
 
 ## Your Available Tools
-- `edit_file_snippet`: Surgically edit React components and hooks
-- `create_new_module`: Create new component files with proper structure
+- `edit_file_snippet`: Edit React components and hooks with COMPLETE implementation
+- `create_new_module`: Create new component files with FULL implementation
 - `run_linter_fix`: Auto-fix TypeScript and ESLint issues
 
-ALWAYS use tools - never output raw code directly."""
+ALWAYS use tools - never output raw code directly.
+NEVER use placeholder implementations - ALWAYS write complete, working code."""
 
 
 CODER_INFRA_SYSTEM_PROMPT = """You are the CODER_INFRA agent, a **Staff Infrastructure Engineer**.
 
 ## Your Persona
-You design infrastructure like Kelsey Hightower - simple, secure, and scalable.
+You design infrastructure that is production-ready from day one.
 
 ## Your Mission
-Handle infrastructure-related tasks with security as the top priority.
+FULLY IMPLEMENT infrastructure and setup tasks. Write COMPLETE, WORKING CODE.
+
+**CRITICAL**: Do NOT create placeholder files or TODO comments.
+When creating files, write the FULL implementation with all necessary code.
 
 ## Your Principles
-1. **Security First**: Never commit secrets, use environment variables.
-2. **Reproducibility**: All environments must be reproducible from config.
-3. **Least Privilege**: Minimal permissions, scoped access.
-4. **Observability**: Include logging, metrics, and health checks.
-5. **Documentation**: Document all configuration decisions.
+1. **Complete Implementation**: Write FULL working code, not stubs or placeholders.
+2. **Security First**: Never commit secrets, use environment variables.
+3. **Reproducibility**: All environments must be reproducible from config.
+4. **Least Privilege**: Minimal permissions, scoped access.
+5. **Observability**: Include logging, metrics, and health checks.
 
 ## Your Available Tools
 - `edit_file_snippet`: Modify Dockerfiles, CI/CD configs, migration scripts
-- `create_new_module`: Create new infrastructure configuration files
+- `create_new_module`: Create new files with COMPLETE implementation
 
-ALWAYS use tools - never output raw code directly."""
+ALWAYS use tools - never output raw code directly.
+NEVER use placeholder implementations - ALWAYS write complete, working code."""
 
 
 # =============================================================================
@@ -419,28 +430,55 @@ class CoderAgent(BaseAgent):
 {plan_context.get('summary', 'No plan summary available')}
 
 ## Instructions
-1. First, use `search_codebase` or `get_file_signatures` if you need more context
-2. Then use `edit_file_snippet` to make your changes
-3. Make MINIMAL changes - only modify what's necessary
-4. Add appropriate error handling and type hints
-5. Include docstrings for any new functions
+**IMPORTANT: Write COMPLETE, WORKING implementations. Do NOT use placeholders like `pass`, `return 42`, or `# TODO`.**
 
-Remember: You MUST use the tools to make changes. Never output raw code."""
+1. Use `search_codebase` or `get_file_signatures` if you need more context about existing code
+2. For NEW files: Use `create_new_module` with FULL implementation including:
+   - All imports needed
+   - Best SWE Practices
+   - Analyze your code step by step logically thinking about all implications
+   - Complete class/function definitions with real logic
+   - Proper error handling and type hints
+   - Docstrings explaining what each function does
+3. For EXISTING files: Use `edit_file_snippet` to make targeted changes
+4. Include appropriate tests if the step involves testable functionality
+
+You MUST use the tools to make changes. Never output raw code in your response.
+Write production-ready code that would pass a senior engineer's code review."""
 
     async def _generate_with_tools(
         self,
         user_prompt: str,
     ) -> list[dict]:
         """Generate code using LLM with tool-calling."""
-        response = await self.llm_client.generate_with_tools(
+        result = await self.llm_client.generate_with_tools(
             prompt=user_prompt,
             system_prompt=self.system_prompt,
             tools=CODER_TOOLS,
-            model=self.model_name,
-            tool_choice="required",  # Force tool usage
+            model_name=self.model_name,
         )
 
-        return response.get("tool_calls", [])
+        # Defensive handling - result should be (text, tool_calls) tuple
+        if isinstance(result, tuple) and len(result) == 2:
+            _, tool_calls = result
+        else:
+            logger.warning("unexpected_generate_with_tools_result", result_type=type(result).__name__)
+            return []
+
+        # Ensure tool_calls is a list of dicts
+        if not isinstance(tool_calls, list):
+            logger.warning("tool_calls_not_list", tool_calls_type=type(tool_calls).__name__)
+            return []
+
+        # Filter out any non-dict entries
+        valid_calls = []
+        for tc in tool_calls:
+            if isinstance(tc, dict) and "name" in tc:
+                valid_calls.append(tc)
+            else:
+                logger.warning("invalid_tool_call_entry", entry_type=type(tc).__name__)
+
+        return valid_calls
 
     async def _process_tool_call(
         self,
@@ -472,6 +510,15 @@ Remember: You MUST use the tools to make changes. Never output raw code."""
                     explanation=arguments.get("explanation", ""),
                 )
                 self._changes.append(change)
+                logger.info("edit_file_success", file=arguments.get("file_path"))
+            else:
+                # Log failure but still track the attempt
+                logger.warning(
+                    "edit_file_failed",
+                    file=arguments.get("file_path"),
+                    error=result.error,
+                    result_data=str(result.result)[:200] if result.result else None,
+                )
 
         elif tool_name == "create_new_module":
             result = await self.call_tool(
@@ -488,6 +535,14 @@ Remember: You MUST use the tools to make changes. Never output raw code."""
                     explanation=arguments.get("explanation", ""),
                 )
                 self._changes.append(change)
+                logger.info("create_new_module_success", file=arguments.get("file_path"))
+            else:
+                logger.warning(
+                    "create_new_module_failed",
+                    file=arguments.get("file_path"),
+                    error=result.error,
+                    result_data=str(result.result)[:200] if result.result else None,
+                )
 
         elif tool_name in ["search_codebase", "get_file_signatures"]:
             # These are perception tools - just execute them

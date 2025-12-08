@@ -388,6 +388,7 @@ class LLMClient:
 
         # Get JSON schema for structured output
         json_schema = output_schema.model_json_schema()
+        json_schema = self._sanitize_schema(json_schema)
 
         try:
             response = await self._openai_client.chat.completions.create(
@@ -398,7 +399,7 @@ class LLMClient:
                     "type": "json_schema",
                     "json_schema": {
                         "name": output_schema.__name__,
-                        "strict": True,
+                        "strict": False,  # Strict mode requires additionalProperties: false
                         "schema": json_schema,
                     },
                 },
@@ -440,6 +441,29 @@ class LLMClient:
             for tool in tools
         ]
 
+    def _sanitize_schema(self, schema: dict) -> dict:
+        """
+        Sanitize JSON schema for OpenAI compatibility.
+
+        Converts Pydantic V2 '$defs' to 'definitions' and updates references.
+        This fixes 'ValueError: Unknown field for Schema: $defs' in older clients.
+        """
+        import json
+
+        schema_str = json.dumps(schema)
+
+        # Replace refs
+        if "$defs" in schema_str:
+            schema_str = schema_str.replace("#/$defs/", "#/definitions/")
+
+        new_schema = json.loads(schema_str)
+
+        # Rename key
+        if "$defs" in new_schema:
+            new_schema["definitions"] = new_schema.pop("$defs")
+
+        return new_schema
+
     # =========================================================================
     # Gemini Implementation
     # =========================================================================
@@ -470,6 +494,7 @@ class LLMClient:
 
         # Get JSON schema for structured output
         json_schema = output_schema.model_json_schema()
+        json_schema = self._sanitize_schema(json_schema)
 
         try:
             model = genai.GenerativeModel(

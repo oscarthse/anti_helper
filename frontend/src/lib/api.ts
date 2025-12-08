@@ -37,7 +37,7 @@ export async function fetchTasks(repoId?: string): Promise<Task[]> {
     url.searchParams.set('repo_id', repoId)
   }
 
-  const response = await fetch(url.toString())
+  const response = await fetch(url.toString(), { cache: 'no-store' })
 
   if (!response.ok) {
     throw new APIError(
@@ -53,7 +53,7 @@ export async function fetchTasks(repoId?: string): Promise<Task[]> {
  * Fetch a single task by ID
  */
 export async function fetchTask(taskId: string): Promise<Task> {
-  const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`)
+  const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, { cache: 'no-store' })
 
   if (!response.ok) {
     throw new APIError(
@@ -78,6 +78,7 @@ export async function createTask(repoId: string, userRequest: string): Promise<T
       repo_id: repoId,
       user_request: userRequest,
     }),
+    cache: 'no-store',
   })
 
   if (!response.ok) {
@@ -92,10 +93,67 @@ export async function createTask(repoId: string, userRequest: string): Promise<T
 }
 
 /**
+ * Approve a task plan and continue execution
+ */
+export async function approveTaskPlan(taskId: string): Promise<void> {
+  let response: Response
+
+  try {
+    response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/approve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    })
+  } catch (error) {
+    // Network-level error - API might be down or CORS issue
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      throw new APIError(
+        `Cannot connect to API server at ${API_BASE_URL}. Is the backend running?`,
+        0,
+        'NETWORK_ERROR'
+      )
+    }
+    throw error
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new APIError(
+      error.detail || 'Failed to approve task plan',
+      response.status,
+    )
+  }
+}
+
+/**
+ * Reject a task plan with feedback
+ */
+export async function rejectTaskPlan(taskId: string, feedback: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/reject`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ feedback }),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new APIError(
+      error.detail || 'Failed to reject task plan',
+      response.status,
+    )
+  }
+}
+
+/**
  * Fetch repositories
  */
 export async function fetchRepositories(): Promise<Repository[]> {
-  const response = await fetch(`${API_BASE_URL}/api/repos/`)
+  const response = await fetch(`${API_BASE_URL}/api/repos/`, { cache: 'no-store' })
 
   if (!response.ok) {
     throw new APIError(

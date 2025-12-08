@@ -33,12 +33,11 @@ install: ## Install all dependencies
 	uv pip install -e ".[dev]"
 	cd frontend && npm install
 
-dev: ## Start API + workers in development mode (requires 'make up' first)
-	@echo "Starting API and Workers..."
-	@# Use specific terminals or background processes in real usage
-	@echo "Run 'make dev-api' and 'make dev-worker' in separate terminals"
+dev: up ## Start ALL services (API + Worker + Frontend) in one terminal
+	@command -v $(PYTHON_VENV)/bin/honcho >/dev/null 2>&1 || { echo "Installing honcho..."; uv pip install honcho; }
+	$(PYTHON_VENV)/bin/honcho start -f Procfile.dev
 
-dev-api: ## Start API server
+dev-api: ## Start API server only
 	$(UVICORN) backend.app.main:app --host 0.0.0.0 --port 8000 --reload
 
 dev-worker: ## Start Dramatiq workers

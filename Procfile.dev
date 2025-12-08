@@ -1,0 +1,3 @@
+api: .venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+worker: .venv/bin/dramatiq backend.app.workers --processes 2 --threads 4
+frontend: cd frontend && npm run dev

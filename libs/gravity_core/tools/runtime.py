@@ -49,6 +49,10 @@ SANDBOX_CONFIG = {
                 "type": "object",
                 "description": "Additional environment variables",
                 "default": {}
+            },
+            "repo_path": {
+                "type": "string",
+                "description": "Host path to repository to mount into container"
             }
         },
         "required": ["command"]
@@ -60,6 +64,7 @@ async def run_shell_command(
     working_directory: str = "/sandbox/project",
     timeout_seconds: int = 60,
     env: dict[str, str] | None = None,
+    repo_path: str | None = None,
 ) -> dict:
     """
     Execute a command in the sandbox container.
@@ -108,6 +113,12 @@ async def run_shell_command(
         if env:
             environment.update(env)
 
+        # Build volume mount if repo_path provided
+        volumes = {}
+        if repo_path:
+            volumes[repo_path] = {'bind': '/sandbox/project', 'mode': 'rw'}
+            logger.info("sandbox_volume_mount", host=repo_path, container="/sandbox/project")
+
         # Run container
         container = client.containers.run(
             image=image,
@@ -117,8 +128,9 @@ async def run_shell_command(
             mem_limit=SANDBOX_CONFIG["mem_limit"],
             cpu_quota=SANDBOX_CONFIG["cpu_quota"],
             network_mode=SANDBOX_CONFIG["network_mode"],
-            read_only=True,
+            read_only=False,  # Must be writable for file creation
             tmpfs={"/tmp": "size=100M"},
+            volumes=volumes if volumes else None,
             detach=True,
             remove=False,
         )

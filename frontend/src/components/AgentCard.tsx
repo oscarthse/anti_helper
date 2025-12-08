@@ -88,7 +88,12 @@ export function AgentCard({ log, isLatest = false }: AgentCardProps) {
               </Badge>
               <span className="text-xs text-muted-foreground flex items-center gap-1">
                 <Clock className="h-3 w-3" />
-                {new Date(log.created_at).toLocaleTimeString()}
+                {new Date(log.created_at).toLocaleTimeString('en-GB', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                  hour12: false
+                })}
               </span>
             </div>
 
@@ -113,7 +118,7 @@ export function AgentCard({ log, isLatest = false }: AgentCardProps) {
           {/* Tool Calls Summary (Mini-badges) */}
           {log.tool_calls && log.tool_calls.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-3">
-              {log.tool_calls.map((tool: ToolCall) => (
+              {(log.tool_calls as unknown as ToolCall[]).map((tool: ToolCall) => (
                 <Badge key={tool.id} variant="secondary" className="text-[10px] h-5 px-1.5 font-mono text-muted-foreground">
                   <Terminal className="h-3 w-3 mr-1" />
                   {tool.tool_name}
@@ -142,7 +147,7 @@ export function AgentCard({ log, isLatest = false }: AgentCardProps) {
                       <div>
                         <div className="font-semibold mb-1 text-foreground/70">Tool Calls:</div>
                         <div className="space-y-2">
-                          {log.tool_calls.map((tool: ToolCall, i) => (
+                          {(log.tool_calls as unknown as ToolCall[]).map((tool: ToolCall, i) => (
                             <div key={tool.id} className="border-l-2 border-border pl-2">
                               <div className="text-primary">{tool.tool_name}</div>
                               <pre className="mt-1 text-[10px]">{JSON.stringify(tool.arguments, null, 2)}</pre>

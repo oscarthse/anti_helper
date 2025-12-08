@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
     # Security
     confidence_review_threshold: float = 0.7
+    antigravity_encryption_key: str | None = None
 
     # API
     api_host: str = "0.0.0.0"

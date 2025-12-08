@@ -321,7 +321,8 @@ class QAAgent(BaseAgent):
         )
 
         # Use LLM with tool-calling to force structured fix output
-        response = await self.llm_client.generate_with_tools(
+        # generate_with_tools returns (text_response, tool_calls) tuple
+        _, tool_calls_raw = await self.llm_client.generate_with_tools(
             prompt=prompt,
             system_prompt=QA_SYSTEM_PROMPT,
             tools=[FIX_TOOL],
@@ -329,8 +330,8 @@ class QAAgent(BaseAgent):
             tool_choice="auto",  # Let LLM decide if fix is possible
         )
 
-        # Extract fix from tool calls
-        tool_calls = response.get("tool_calls", [])
+        # Extract fix from tool calls (ensure it's a list)
+        tool_calls = tool_calls_raw if isinstance(tool_calls_raw, list) else []
 
         for tc in tool_calls:
             if tc.get("name") == "suggest_fix":
@@ -412,11 +413,52 @@ Focus on the actual error, not workarounds."""
         """Build output when all tests pass."""
         total = len(self._execution_runs)
 
+        # Check if any tests were actually run (look for pytest output indicators)
+        any_tests_ran = False
+        tests_collected = 0
+        for run in self._execution_runs:
+            stdout = run.stdout or ""
+            # pytest output patterns indicating actual test execution
+            if "passed" in stdout.lower() or "failed" in stdout.lower():
+                any_tests_ran = True
+            if "collected" in stdout.lower():
+                # Extract number of tests collected
+                import re
+                match = re.search(r'collected (\d+) item', stdout.lower())
+                if match:
+                    tests_collected = int(match.group(1))
+                    if tests_collected > 0:
+                        any_tests_ran = True
+            # Check for "no tests ran" indicator
+            if "no tests ran" in stdout.lower() or "no tests collected" in stdout.lower():
+                any_tests_ran = False
+
+        # Be honest about what happened
+        if not any_tests_ran:
+            return self.build_output(
+                ui_title="⚠️ No Tests Executed",
+                ui_subtitle="Commands exited successfully but no tests were actually run.",
+                technical_reasoning=json.dumps({
+                    "status": "no_tests_found",
+                    "warning": "No test files or test functions were found/executed.",
+                    "runs": [
+                        {
+                            "command": run.command,
+                            "exit_code": run.exit_code,
+                            "stdout_preview": (run.stdout or "")[:200],
+                        }
+                        for run in self._execution_runs
+                    ],
+                }, indent=2),
+                confidence_score=0.7,  # Lower confidence since we didn't verify anything
+            )
+
         return self.build_output(
             ui_title="✅ All Tests Passed",
-            ui_subtitle=f"All {total} test command(s) passed. The changes work as expected.",
+            ui_subtitle=f"All {total} test command(s) passed ({tests_collected} tests). The changes work as expected.",
             technical_reasoning=json.dumps({
                 "status": "success",
+                "tests_collected": tests_collected,
                 "runs": [
                     {
                         "command": run.command,

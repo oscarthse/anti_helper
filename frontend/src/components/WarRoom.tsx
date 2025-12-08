@@ -1,0 +1,376 @@
+/**
+ * WarRoom Component
+ *
+ * 3-column cockpit layout for task execution.
+ * Handles SSE streaming and real-time updates.
+ */
+
+'use client'
+
+import { useState, useEffect, useRef, useCallback } from 'react'
+import type { Task, AgentLog, TaskPlan } from '@/types/schema'
+import { subscribeToTaskStream, approveTaskPlan } from '@/lib/api'
+import { TaskPlanView } from './TaskPlanView'
+import { AgentCard } from './AgentCard'
+import { DiffViewer } from './DiffViewer'
+import { TerminalOutput } from './TerminalOutput'
+import { LiveStatusBar } from './LiveStatusBar'
+import { AlertCircle, Wifi, WifiOff, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+interface WarRoomProps {
+  task: Task
+}
+
+export function WarRoom({ task }: WarRoomProps) {
+  const [logs, setLogs] = useState<AgentLog[]>([])
+  const [isConnected, setIsConnected] = useState(false)
+  const [isReconnecting, setIsReconnecting] = useState(false)
+  const [currentStep, setCurrentStep] = useState(task.current_step || 0)
+  const [taskStatus, setTaskStatus] = useState(task.status?.toLowerCase() || 'pending')
+  const [isApproving, setIsApproving] = useState(false)
+  const [approvalError, setApprovalError] = useState<string | null>(null)
+  const streamRef = useRef<HTMLDivElement>(null)
+  const cleanupRef = useRef<(() => void) | null>(null)
+
+  // Sync taskStatus when task prop changes (e.g., after approval)
+  useEffect(() => {
+    const newStatus = task.status?.toLowerCase() || 'pending'
+    setTaskStatus(newStatus)
+  }, [task.status])
+
+  // Handle plan approval
+  const handleApprove = useCallback(async () => {
+    setIsApproving(true)
+    setApprovalError(null)
+    try {
+      await approveTaskPlan(task.id)
+      setTaskStatus('executing')
+    } catch (error) {
+      console.error('Failed to approve:', error)
+      setApprovalError(error instanceof Error ? error.message : 'Failed to approve')
+    } finally {
+      setIsApproving(false)
+    }
+  }, [task.id])
+
+
+  // Auto-scroll to bottom when new logs arrive
+  useEffect(() => {
+    if (streamRef.current) {
+      streamRef.current.scrollTop = streamRef.current.scrollHeight
+    }
+  }, [logs])
+
+  // Connect to SSE stream
+  useEffect(() => {
+    let retryCount = 0
+    const maxRetries = 5
+
+    const connect = async () => {
+      try {
+        setIsReconnecting(retryCount > 0)
+
+        cleanupRef.current = await subscribeToTaskStream(task.id, {
+          onLog: (log) => {
+            setLogs(prev => {
+              // Deduplicate by log ID
+              if (log.id && prev.some(l => l.id === log.id)) {
+                return prev
+              }
+              return [...prev, log]
+            })
+            setIsConnected(true)
+            setIsReconnecting(false)
+            retryCount = 0
+
+            // Update current step based on log
+            if (log.step_number > currentStep) {
+              setCurrentStep(log.step_number)
+            }
+          },
+          onError: (error) => {
+            console.error('SSE Error:', error)
+            setIsConnected(false)
+
+            // Auto-retry with exponential backoff
+            if (retryCount < maxRetries) {
+              retryCount++
+              const delay = Math.min(1000 * Math.pow(2, retryCount), 30000)
+              setTimeout(connect, delay)
+            }
+          },
+          onComplete: () => {
+            setIsConnected(false)
+          },
+        })
+
+        setIsConnected(true)
+      } catch (error) {
+        console.error('Failed to connect:', error)
+        setIsConnected(false)
+      }
+    }
+
+    connect()
+
+    return () => {
+      if (cleanupRef.current) {
+        cleanupRef.current()
+      }
+    }
+  }, [task.id, currentStep])
+
+  // Parse task plan
+  const taskPlan: TaskPlan | null = task.task_plan
+    ? (task.task_plan as unknown as TaskPlan)
+    : null
+
+  // Get latest changeset for diff viewer
+  const latestChangeSet = logs
+    .filter(log => log.agent_persona.startsWith('coder'))
+    .flatMap(log => log.tool_calls || [])
+    .filter(tc => tc && typeof tc === 'object' && 'result' in tc)
+    .pop()
+
+  // Get terminal output from QA logs
+  const terminalOutput = logs
+    .filter(log => log.agent_persona === 'qa')
+    .map(log => log.technical_reasoning)
+    .join('\n')
+
+  return (
+    <div className="flex-1 flex overflow-hidden relative">
+      {/* Plan Review Banner - Non-blocking notification at top */}
+      {(taskStatus === 'plan_review' || taskStatus === 'review_required') && (
+        <div className="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-amber-950/95 to-amber-950/80 backdrop-blur-sm border-b border-amber-700 shadow-lg">
+          <div className="p-4">
+            <div className="flex items-start gap-4">
+              {/* Icon */}
+              <div className="h-10 w-10 rounded-full bg-amber-900/50 flex items-center justify-center flex-shrink-0">
+                <AlertCircle className="h-5 w-5 text-amber-400" />
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-4 mb-2">
+                  <div>
+                    <h3 className="text-lg font-semibold text-amber-400">
+                      Plan Requires Approval
+                    </h3>
+                    <p className="text-xs text-amber-200/60">
+                      Review the Strategy panel below, then approve or reject
+                    </p>
+                  </div>
+
+                  {/* Buttons */}
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button
+                      onClick={handleApprove}
+                      disabled={isApproving}
+                      className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors text-sm"
+                    >
+                      {isApproving ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Approving...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-4 w-4" />
+                          Approve
+                        </>
+                      )}
+                    </button>
+                    <button
+                      disabled={isApproving}
+                      className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 text-slate-200 font-medium rounded-lg transition-colors text-sm"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      Reject
+                    </button>
+                  </div>
+                </div>
+
+                {/* Plan Summary & Steps Preview */}
+                {taskPlan && (
+                  <div className="mt-2 p-3 bg-slate-900/50 rounded-lg border border-amber-800/50">
+                    <p className="text-sm text-slate-300 mb-3">{taskPlan.summary}</p>
+
+                    {/* Step List */}
+                    {taskPlan.steps && taskPlan.steps.length > 0 && (
+                      <div className="space-y-1.5 mb-3 max-h-48 overflow-y-auto pr-2">
+                        <p className="text-xs text-amber-300/80 font-medium mb-2">Execution Plan:</p>
+                        {taskPlan.steps.map((step, index) => (
+                          <div
+                            key={step.order || index}
+                            className="flex items-start gap-2 text-xs"
+                          >
+                            <span className="font-mono text-amber-400/60 flex-shrink-0 w-5">
+                              {String(index + 1).padStart(2, '0')}
+                            </span>
+                            <span className="text-slate-400 flex-1">{step.description}</span>
+                            <span className="text-slate-600 flex-shrink-0 font-mono text-[10px]">
+                              {step.agent_persona?.replace('coder_', '').toUpperCase() || 'AGENT'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-3 text-xs text-amber-200/60 border-t border-slate-800 pt-2">
+                      <span>📋 {taskPlan.steps?.length || 0} steps</span>
+                      <span>•</span>
+                      <span>⚡ Complexity: {taskPlan.estimated_complexity}/10</span>
+                      {taskPlan.affected_files && taskPlan.affected_files.length > 0 && (
+                        <>
+                          <span>•</span>
+                          <span>📁 {taskPlan.affected_files.length} files</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {approvalError && (
+                  <div className="mt-2 p-2 rounded-lg bg-red-950/50 border border-red-800 text-red-400 text-sm">
+                    {approvalError}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Column 1: Strategy (Task Plan) */}
+      <div className={cn(
+        "w-72 flex-shrink-0 border-r border-slate-800 overflow-auto bg-slate-950/50",
+        (taskStatus === 'plan_review' || taskStatus === 'review_required') && "pt-40"
+      )}>
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-medium text-slate-300 uppercase tracking-wider">
+              Strategy
+            </h2>
+          </div>
+
+          {taskPlan ? (
+            <TaskPlanView
+              plan={taskPlan}
+              currentStep={currentStep}
+              completedSteps={logs.map(l => l.step_number)}
+            />
+          ) : (
+            <div className="text-sm text-slate-500 p-4 border border-dashed border-slate-800 rounded-lg text-center">
+              Awaiting plan generation...
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Column 2: Activity (Live Stream) */}
+      <div className="flex-1 flex flex-col min-w-0 border-r border-slate-800">
+        {/* Live Status Bar */}
+        <LiveStatusBar
+          task={task}
+          taskPlan={taskPlan}
+          currentStep={currentStep}
+          isConnected={isConnected}
+        />
+
+        {/* Stream Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <h2 className="text-sm font-medium text-slate-300 uppercase tracking-wider">
+            Activity Feed
+          </h2>
+
+          {/* Connection Status */}
+          <div className={cn(
+            "flex items-center gap-1.5 px-2 py-1 rounded text-xs",
+            isConnected
+              ? "text-emerald-400"
+              : isReconnecting
+                ? "text-amber-400"
+                : "text-red-400"
+          )}>
+            {isConnected ? (
+              <>
+                <Wifi className="h-3.5 w-3.5" />
+                Live
+              </>
+            ) : isReconnecting ? (
+              <>
+                <AlertCircle className="h-3.5 w-3.5 animate-pulse" />
+                Reconnecting...
+              </>
+            ) : (
+              <>
+                <WifiOff className="h-3.5 w-3.5" />
+                Disconnected
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Stream Content with fade effect */}
+        <div
+          ref={streamRef}
+          className="flex-1 overflow-auto p-4 space-y-4 relative"
+          style={{
+            maskImage: 'linear-gradient(to bottom, transparent 0%, black 5%, black 100%)',
+            WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 5%, black 100%)',
+          }}
+        >
+          {logs.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-slate-500">
+              <div className="text-center">
+                <div className="animate-pulse mb-2">
+                  <div className="h-2 w-24 bg-slate-800 rounded mx-auto" />
+                </div>
+                <p className="text-sm">Waiting for agent activity...</p>
+              </div>
+            </div>
+          ) : (
+            [...logs]
+              .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+              .map((log, index, sortedLogs) => (
+                <div
+                  key={log.id || index}
+                  className="animate-in slide-in-from-bottom-2 duration-300"
+                >
+                  <AgentCard
+                    log={log}
+                    isLatest={index === sortedLogs.length - 1}
+                  />
+                </div>
+              ))
+          )}
+        </div>
+      </div>
+
+      {/* Column 3: Artifacts (Diff & Terminal) */}
+      <div className="w-96 flex-shrink-0 flex flex-col overflow-hidden bg-slate-950/30">
+        <div className="p-4 border-b border-slate-800">
+          <h2 className="text-sm font-medium text-slate-300 uppercase tracking-wider">
+            Artifacts
+          </h2>
+        </div>
+
+        <div className="flex-1 flex flex-col overflow-auto">
+          {/* Diff Viewer */}
+          <div className="flex-1 min-h-0 border-b border-slate-800">
+            <DiffViewer changeSet={latestChangeSet as Record<string, unknown> | undefined} />
+          </div>
+
+          {/* Terminal Output */}
+          <div className="h-48 flex-shrink-0">
+            <TerminalOutput output={terminalOutput} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default WarRoom

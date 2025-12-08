@@ -344,7 +344,52 @@ def task_status(
         rprint("\n[bold]Agent Activity:[/bold]\n")
         for log in task["agent_logs"]:
             rprint(f"  [{log['agent_persona']}] {log['ui_title']}")
+    if task.get("agent_logs"):
+        rprint("\n[bold]Agent Activity:[/bold]\n")
+        for log in task["agent_logs"]:
+            rprint(f"  [{log['agent_persona']}] {log['ui_title']}")
             rprint(f"    [dim]{log['ui_subtitle'][:80]}...[/dim]\n")
+
+
+@task_app.command("approve")
+def approve_task(
+    task_id: str = typer.Argument(..., help="Task ID to approve"),
+) -> None:
+    """Approve a task plan."""
+    response = httpx.post(f"{API_URL}/api/tasks/{task_id}/approve", timeout=30)
+
+    if response.status_code == 200:
+        rprint(f"[green]✓ Task {task_id} approved successfully[/green]")
+    elif response.status_code == 404:
+        rprint(f"[red]Error:[/red] Task {task_id} not found")
+        raise typer.Exit(1)
+    else:
+        rprint(f"[red]Error:[/red] Failed to approve task: {response.status_code} - {response.text}")
+        raise typer.Exit(1)
+
+@task_app.command("delete")
+def delete_task(
+    task_id: str = typer.Argument(..., help="Task ID to delete"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+) -> None:
+    """Delete a task permanently."""
+
+    if not force:
+        if not typer.confirm(f"Are you sure you want to delete task {task_id}?"):
+            rprint("[yellow]Deletion cancelled.[/yellow]")
+            raise typer.Abort()
+
+    response = httpx.delete(f"{API_URL}/api/tasks/{task_id}", timeout=10)
+
+    if response.status_code == 204:
+        rprint(f"[green]✓ Task {task_id} deleted successfully[/green]")
+    elif response.status_code == 404:
+        rprint(f"[red]Error:[/red] Task {task_id} not found")
+        raise typer.Exit(1)
+    else:
+        rprint(f"[red]Error:[/red] Failed to delete task: {response.status_code}")
+        raise typer.Exit(1)
+
 
 
 # =============================================================================
