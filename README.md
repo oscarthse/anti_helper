@@ -14,10 +14,10 @@
 | **THE BODY** (FastAPI) | State Manager & Dispatcher | FastAPI, SQLAlchemy Async, Dramatiq, Redis, Alembic |
 | **THE FACE** (Frontend) | Visual Renderer | Next.js 14, TypeScript, Tailwind, Shadcn UI, Framer Motion |
 
-**Recent Critical Updates:**
-- 🛡️ **Protocol "Deterministic Reality":** "Sledgehammer" verification blocks "Ghost Code" by checking physical disk writes.
-- 🧠 **Neuro-Symbolic Core:** Linear plans replaced by a dynamic **DAG Execution Engine** with deadlock detection.
-- 🕹️ **Glass Cockpit:** Truth-first UI rendering the *actual* system state, not the LLM's hallucinated state.
+**Recent Critical Updates (Dec 2025):**
+- 🛡️ **Protocol "Verified Reality":** "Sledgehammer" verification logic guarantees files are physically written to disk.
+- 🧠 **Technical Mandate:** Planner now enforces strict implementation specs, eliminating "lazy placeholder" code.
+- 🕹️ **Headless Debugger:** `scripts/run_agent.py` allows rapid Agent verification without the full backend stack.
 
 ## 🤖 Agent Personas
 
