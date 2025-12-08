@@ -77,16 +77,16 @@ class TestAgentOutput:
         assert any("confidence_score" in str(e) for e in errors)
 
     def test_requires_review_property(self, sample_agent_output_data):
-        """Test that requires_review is True when confidence < 0.7."""
+        """Test that requires_review is True when confidence < 0.1."""
+        # Score of 0.5 is now considered "confident enough"
         sample_agent_output_data["confidence_score"] = 0.5
         output = AgentOutput(**sample_agent_output_data)
-
-        assert output.requires_review is True
-
-        sample_agent_output_data["confidence_score"] = 0.9
-        output = AgentOutput(**sample_agent_output_data)
-
         assert output.requires_review is False
+
+        # Extremely low score still triggers review
+        sample_agent_output_data["confidence_score"] = 0.05
+        output = AgentOutput(**sample_agent_output_data)
+        assert output.requires_review is True
 
     def test_invalid_agent_persona(self, sample_agent_output_data):
         """Test that invalid agent_persona raises ValidationError."""

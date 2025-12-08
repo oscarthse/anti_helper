@@ -31,6 +31,7 @@ import asyncio
 import json
 import traceback
 from datetime import datetime, timezone
+from contextlib import asynccontextmanager
 
 from uuid import UUID
 
@@ -499,7 +500,7 @@ async def _run_execution_phase(
     # Mark as completed
     task.status = TaskStatus.COMPLETED
     task.current_agent = None
-    task.completed_at = datetime.utcnow()
+    task.completed_at = datetime.now(timezone.utc)
     await session.commit()
 
     logger.info(
@@ -715,7 +716,7 @@ async def _run_task_async(task_id: str) -> None:
                 task.status = TaskStatus.FAILED
                 task.error_message = f"{type(e).__name__}: {str(e)}"
                 task.retry_count += 1
-                task.updated_at = datetime.utcnow()
+                task.updated_at = datetime.now(timezone.utc)
 
                 # Log the crash to AgentLog for SSE visibility
                 try:
@@ -809,11 +810,6 @@ async def _resume_task_async(task_id: str, approved: bool) -> None:
                 logger.info("task_resume_rejected", task_id=task_id)
 
             await session.commit()
-
-        if approved:
-            # Re-enter the main execution loop
-            # The loop will skip planning because status is EXECUTING
-            await _run_task_async(task_id)
     finally:
         await engine.dispose()
 
@@ -944,7 +940,7 @@ async def _run_task_async(task_id: str) -> None:
                     task.status = TaskStatus.FAILED
                     task.error_message = f"{type(e).__name__}: {str(e)}"
                     task.retry_count += 1
-                    task.updated_at = datetime.utcnow()
+                    task.updated_at = datetime.now(timezone.utc)
 
                     # Log the crash to AgentLog for SSE visibility
                     try:
@@ -964,3 +960,20 @@ async def _run_task_async(task_id: str) -> None:
                     await session.commit()
     finally:
         await engine.dispose()
+
+@asynccontextmanager
+async def worker_session_factory():
+    """
+    Context manager for worker database sessions.
+    Creates a new engine and session for each task execution to ensure isolation.
+    """
+    engine = await _create_worker_engine()
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with session_factory() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
+
+    await engine.dispose()

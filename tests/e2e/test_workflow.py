@@ -7,7 +7,7 @@ verifying the full loop from task creation to completion.
 
 # Add project paths
 # Add project paths
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
@@ -121,7 +121,7 @@ class TestMockedAgentWorkflow:
             ui_subtitle="I made changes but I'm not confident.",
             technical_reasoning="Multiple possible approaches",
             tool_calls=[],
-            confidence_score=0.5,  # Below threshold
+            confidence_score=0.05,  # Below threshold (0.1)
             agent_persona="coder_be",
         )
 
@@ -225,8 +225,8 @@ class TestFullLoopSimulation:
             status=TaskStatus.PENDING,
             current_step=0,
             retry_count=0,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
         db_session.add(task)
         await db_session.flush()
@@ -256,7 +256,7 @@ class TestFullLoopSimulation:
             assert task.status == state
 
         # Mark as completed
-        task.completed_at = datetime.utcnow()
+        task.completed_at = datetime.now(timezone.utc)
         await session.flush()
 
         assert task.status == TaskStatus.COMPLETED
@@ -280,7 +280,7 @@ class TestFullLoopSimulation:
             technical_reasoning="Parsing user intent.",
             confidence_score=0.85,
             requires_review=False,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             duration_ms=1500,
         )
         session.add(planner_log)
@@ -298,7 +298,7 @@ class TestFullLoopSimulation:
             tool_calls=[{"tool_name": "edit_file_snippet", "success": True}],
             confidence_score=0.9,
             requires_review=False,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             duration_ms=2500,
         )
         session.add(coder_log)

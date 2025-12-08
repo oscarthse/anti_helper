@@ -6,7 +6,7 @@ Every agent action must be logged with a clear, user-facing explanation,
 adhering to the Explainability First mandate.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
@@ -113,7 +113,7 @@ class AgentOutput(BaseModel):
         description="The persona of the agent that generated this output"
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When this output was generated"
     )
 

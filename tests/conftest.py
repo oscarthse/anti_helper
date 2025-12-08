@@ -12,7 +12,7 @@ import asyncio
 # Add project root to path
 # Add project root to path
 from collections.abc import AsyncGenerator, Generator
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -92,8 +92,8 @@ def sample_repository_data() -> dict:
         "description": "A test repository",
         "project_type": "python",
         "framework": "fastapi",
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
     }
 
 
@@ -111,8 +111,8 @@ def sample_task_data(sample_repository_data) -> dict:
         "task_plan": None,
         "error_message": None,
         "retry_count": 0,
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
         "completed_at": None,
     }
 

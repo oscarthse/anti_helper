@@ -52,18 +52,21 @@ class TestDocsAgentExecution:
     async def test_generates_changelog_entry(self, docs_agent, mock_llm_client, mock_changeset):
         """Test that DocsAgent generates a changelog entry for code changes."""
         # Configure LLM to return changelog tool call
-        mock_llm_client.generate_with_tools.return_value = {
-            "tool_calls": [
-                {
-                    "name": "update_changelog",
-                    "arguments": {
-                        "version": "Unreleased",
-                        "category": "Added",
-                        "entry": "New agent implementation for enhanced workflow",
+        mock_llm_client.generate_with_tools.return_value = (
+            "Generating changelog...",
+            {
+                "tool_calls": [
+                    {
+                        "name": "update_changelog",
+                        "arguments": {
+                            "version": "Unreleased",
+                            "category": "Added",
+                            "entry": "New agent implementation for enhanced workflow",
+                        },
                     },
-                },
-            ],
-        }
+                ],
+            }
+        )
 
         # Mock tool calls
         docs_agent.call_tool.return_value = MagicMock(
@@ -92,27 +95,30 @@ class TestDocsAgentExecution:
     ):
         """Test that DocsAgent can generate multiple documentation updates."""
         # Configure LLM to return multiple tool calls
-        mock_llm_client.generate_with_tools.return_value = {
-            "tool_calls": [
-                {
-                    "name": "update_changelog",
-                    "arguments": {
-                        "version": "Unreleased",
-                        "category": "Added",
-                        "entry": "New feature added",
+        mock_llm_client.generate_with_tools.return_value = (
+            "Updating docs...",
+            {
+                "tool_calls": [
+                    {
+                        "name": "update_changelog",
+                        "arguments": {
+                            "version": "Unreleased",
+                            "category": "Added",
+                            "entry": "New feature added",
+                        },
                     },
-                },
-                {
-                    "name": "update_readme",
-                    "arguments": {
-                        "section": "Usage",
-                        "action": "append",
-                        "content": "## New Feature\n\nDescription here.",
-                        "reason": "Document new feature",
+                    {
+                        "name": "update_readme",
+                        "arguments": {
+                            "section": "Usage",
+                            "action": "append",
+                            "content": "## New Feature\n\nDescription here.",
+                            "reason": "Document new feature",
+                        },
                     },
-                },
-            ],
-        }
+                ],
+            }
+        )
 
         # Mock successful tool executions
         docs_agent.call_tool.return_value = MagicMock(
@@ -128,9 +134,8 @@ class TestDocsAgentExecution:
 
         await docs_agent.execute(uuid4(), context)
 
-        # Verify both updates are in the output
-        doc_changes = docs_agent.get_doc_changes()
-        assert len(doc_changes) >= 1  # At least changelog
+        # Verify both updates are in the output (changelog and readme)
+        assert docs_agent.call_tool.call_count >= 2
 
     @pytest.mark.asyncio
     async def test_no_changes_returns_gracefully(self, docs_agent, mock_llm_client):
@@ -170,22 +175,25 @@ class TestDocsAgentExecution:
     @pytest.mark.asyncio
     async def test_generates_docstring_for_new_function(self, docs_agent, mock_llm_client):
         """Test that DocsAgent generates docstrings for new functions."""
-        mock_llm_client.generate_with_tools.return_value = {
-            "tool_calls": [
-                {
-                    "name": "add_docstring",
-                    "arguments": {
-                        "file_path": "libs/gravity_core/utils/helper.py",
-                        "symbol_name": "calculate_metrics",
-                        "docstring": (
-                            "Calculate metrics for the given data.\n\n"
-                            "Args:\n    data: Input data dict\n\n"
-                            "Returns:\n    Computed metrics"
-                        ),
+        mock_llm_client.generate_with_tools.return_value = (
+            "Adding docstring...",
+            {
+                "tool_calls": [
+                    {
+                        "name": "add_docstring",
+                        "arguments": {
+                            "file_path": "libs/gravity_core/utils/helper.py",
+                            "symbol_name": "calculate_metrics",
+                            "docstring": (
+                                "Calculate metrics for the given data.\n\n"
+                                "Args:\n    data: Input data dict\n\n"
+                                "Returns:\n    Computed metrics"
+                            ),
+                        },
                     },
-                },
-            ],
-        }
+                ],
+            }
+        )
 
         docs_agent.call_tool.return_value = MagicMock(
             success=True,
@@ -207,7 +215,7 @@ class TestDocsAgentExecution:
         await docs_agent.execute(uuid4(), context)
 
         # Should have docstring update in tool calls
-        assert len(docs_agent._tool_calls_made) >= 1
+        assert docs_agent.call_tool.call_count >= 1
 
 
 class TestDocsAgentPromptBuilding:
