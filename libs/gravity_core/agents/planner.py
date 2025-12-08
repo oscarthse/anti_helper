@@ -84,6 +84,19 @@ Identify potential issues:
 - External service dependencies
 - Complex logic requiring extra testing
 
+### 6. MANDATORY README.md (Non-Negotiable)
+**EVERY** plan MUST include a final step to create/update `README.md`:
+- Assigned to: `coder_infra`
+- Files affected: `[NEW] README.md` or `README.md`
+- This step depends on ALL other implementation steps
+
+**README CONTENT REQUIREMENTS (NO GENERIC TEMPLATES!):**
+- Use the EXACT project name and purpose from the user's request
+- List the ACTUAL files being created in this plan (e.g., app.py, data_loader.py)
+- Write installation commands specific to the dependencies used (streamlit, pandas, etc.)
+- Provide usage examples that match the actual application functionality
+- DO NOT use placeholder text like "[Your Name]" or "[briefly describe]"
+
 ## Your Output
 Generate a TaskPlan with:
 - `summary`: One-sentence description of the overall change

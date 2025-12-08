@@ -238,6 +238,10 @@ class DAGExecutor:
 
                 self._tasks_completed += 1
 
+                # CRITICAL: Update root task progress in DB for frontend
+                self.root_task.current_step = self._tasks_completed
+                await self.session.commit()
+
             # Check for timeout
             if self._is_timed_out():
                 return ExecutionResult(
@@ -297,26 +301,47 @@ class DAGExecutor:
         Returns:
             "CONTINUE", "PAUSED", or "TERMINATED"
         """
-        await self.session.refresh(self.root_task)
+        try:
+            await self.session.refresh(self.root_task)
+        except Exception as e:
+            # If refresh fails (e.g. ObjectDeletedError), assume task is gone
+            logger.warning(
+                "dag_executor_refresh_failed_terminating",
+                root_task_id=str(self.root_task.id),
+                error=str(e)
+            )
+            return "TERMINATED"
 
         if self.root_task.status == TaskStatus.PAUSED:
             return "PAUSED"
 
-        if self.root_task.status in [TaskStatus.FAILED]:
+        # Check for explicit termination states
+        if self.root_task.status in [
+            TaskStatus.FAILED,
+            TaskStatus.COMPLETED,
+        ]:
             return "TERMINATED"
 
         # Check for "ARCHIVED" or "DELETED" status if they exist
         status_value = self.root_task.status.value if hasattr(self.root_task.status, 'value') else str(self.root_task.status)
-        if status_value.upper() in ["ARCHIVED", "DELETED"]:
+        if status_value.upper() in ["ARCHIVED", "DELETED", "CANCELLED"]:
             return "TERMINATED"
 
         return "CONTINUE"
 
     async def _wait_for_resume(self) -> None:
         """Block until task is resumed (exits PAUSED state)."""
-        while self.root_task.status == TaskStatus.PAUSED:
+        logger.info("dag_executor_pausing", root_task_id=str(self.root_task.id))
+
+        while True:
             await asyncio.sleep(self.PAUSE_CHECK_INTERVAL)
-            await self.session.refresh(self.root_task)
+            try:
+                await self.session.refresh(self.root_task)
+                if self.root_task.status != TaskStatus.PAUSED:
+                    break
+            except Exception:
+                # If task is deleted while paused, stop waiting
+                break
 
         logger.info("dag_executor_resumed", root_task_id=str(self.root_task.id))
 

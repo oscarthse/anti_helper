@@ -135,6 +135,11 @@ async def log_agent_output(
         "created_at": log_entry.created_at.isoformat() if log_entry.created_at else None,
     }
 
+    # PERSISTENCE LOGIC REVERTED:
+    # Direct SQL update of Task.current_step caused session conflicts/race conditions
+    # with the ORM object managed by TaskExecutor.
+    # We will rely on volatile state until a cleaner approach (Atomic Increment separate from ORM) is designed.
+
     try:
         event_bus = get_event_bus()
         # Publish to the subtask's channel
@@ -382,6 +387,21 @@ async def _run_planning_phase(
         task.status = TaskStatus.PLAN_REVIEW
         await session.commit()
 
+        # Publish plan_ready event so frontend can refetch task data
+        try:
+            event_bus = get_event_bus()
+            await event_bus.publish_task_event(
+                task_id=str(task.id),
+                event_type="plan_ready",
+                data={
+                    "status": task.status.value,
+                    "task_plan": task.task_plan,
+                    "requires_review": True,
+                }
+            )
+        except Exception as e:
+            logger.warning("plan_ready_event_failed", task_id=str(task.id), error=str(e))
+
         logger.info(
             "task_awaiting_plan_review",
             task_id=str(task.id),
@@ -391,6 +411,21 @@ async def _run_planning_phase(
     else:
         task.status = TaskStatus.EXECUTING
         await session.commit()
+
+        # Publish plan_ready event so frontend can refetch task data
+        try:
+            event_bus = get_event_bus()
+            await event_bus.publish_task_event(
+                task_id=str(task.id),
+                event_type="plan_ready",
+                data={
+                    "status": task.status.value,
+                    "task_plan": task.task_plan,
+                    "requires_review": False,
+                }
+            )
+        except Exception as e:
+            logger.warning("plan_ready_event_failed", task_id=str(task.id), error=str(e))
 
         # Materialize plan to database (create subtask DAG)
         await _materialize_plan_to_db(session, task)
@@ -476,6 +511,44 @@ async def _materialize_plan_to_db(
 # =============================================================================
 
 
+
+async def _check_and_wait_if_paused(session: AsyncSession, task) -> bool:
+    """
+    Check if task is paused and wait if necessary.
+
+    Returns:
+        True if task should stop (Terminated/Deleted)
+        False if task should continue
+    """
+    from backend.app.db.models import TaskStatus
+    import asyncio
+
+    while True:
+        try:
+            await session.refresh(task)
+        except Exception:
+            # Task probably deleted
+            logger.info("task_not_found_terminating", task_id=str(task.id))
+            return True
+
+        if task.status == TaskStatus.PAUSED:
+            logger.info("worker_paused_waiting_resume", task_id=str(task.id))
+            await asyncio.sleep(2.0)
+            continue
+
+        # Check for termination states
+        status_str = task.status.value if hasattr(task.status, 'value') else str(task.status)
+        if status_str.upper() in ["FAILED", "COMPLETED", "ARCHIVED", "DELETED", "CANCELLED"]:
+            logger.info(
+                "worker_terminating_due_to_status",
+                task_id=str(task.id),
+                status=status_str
+            )
+            return True
+
+        return False
+
+
 async def _run_task_async(task_id: str) -> None:
     """
     Execute the complete agent workflow for a task.
@@ -535,6 +608,12 @@ async def _run_task_async(task_id: str) -> None:
                 )
 
                 # =============================================================
+                # Step 1.5: LIFECYCLE CHECK (Pre-Planning)
+                # =============================================================
+                if await _check_and_wait_if_paused(session, task):
+                    return  # Task was terminated/deleted during wait
+
+                # =============================================================
                 # Step 2: PLANNING PHASE
                 # =============================================================
 
@@ -565,6 +644,12 @@ async def _run_task_async(task_id: str) -> None:
                             task_id=task_id,
                         )
                         return
+
+                # =============================================================
+                # Step 2.5: LIFECYCLE CHECK (Pre-Execution)
+                # =============================================================
+                if await _check_and_wait_if_paused(session, task):
+                    return  # Task was terminated/deleted during wait
 
                 # =============================================================
                 # Step 3: EXECUTION PHASE (DAG Executor)

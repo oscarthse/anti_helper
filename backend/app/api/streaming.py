@@ -68,7 +68,7 @@ async def fetch_initial_task_state(
     task_id: UUID,
     session: AsyncSession,
     last_log_id: UUID | None = None,
-) -> tuple[dict | None, list[dict]]:
+) -> tuple[dict | None, list[dict], list[dict]]:
     """
     Fetch initial task state and any missed logs.
 
@@ -95,9 +95,20 @@ async def fetch_initial_task_state(
     }
 
     # Get any logs created after last_log_id (for reconnection)
+    # CRITICAL: Include logs from BOTH root task AND its subtasks
+    # Frontend subscribes to root task, but logs are created with subtask IDs
+    from sqlalchemy import or_
+
+    # Get subtask IDs for this root task
+    subtask_query = select(Task.id).where(Task.parent_task_id == task_id)
+    subtask_result = await session.execute(subtask_query)
+    subtask_ids = [row[0] for row in subtask_result.fetchall()]
+
+    # Query logs from root task OR any of its subtasks
+    all_task_ids = [task_id] + subtask_ids
     log_query = (
         select(AgentLog)
-        .where(AgentLog.task_id == task_id)
+        .where(AgentLog.task_id.in_(all_task_ids))
         .order_by(AgentLog.created_at)
     )
     if last_log_id:
@@ -121,7 +132,30 @@ async def fetch_initial_task_state(
         for log in logs
     ]
 
-    return task_state, missed_logs
+    # CRITICAL: Also fetch file changes from ChangeSet table
+    from backend.app.db.models import ChangeSet
+
+    changeset_query = (
+        select(ChangeSet)
+        .where(ChangeSet.task_id.in_(all_task_ids))
+        .order_by(ChangeSet.created_at)
+    )
+    changeset_result = await session.execute(changeset_query)
+    changesets = changeset_result.scalars().all()
+
+    file_changes = [
+        {
+            "id": str(cs.id),
+            "task_id": str(cs.task_id),
+            "file_path": cs.file_path,
+            "file_action": cs.action,
+            "byte_size": len(cs.diff) if cs.diff else 0,
+            "created_at": cs.created_at.isoformat(),
+        }
+        for cs in changesets
+    ]
+
+    return task_state, missed_logs, file_changes
 
 
 # =============================================================================
@@ -133,6 +167,7 @@ async def task_event_generator(
     task_id: UUID,
     initial_state: dict,
     missed_logs: list[dict],
+    file_changes: list[dict] = None,
 ) -> AsyncGenerator[dict, None]:
     """
     Generate SSE events for a task's progress.
@@ -143,7 +178,8 @@ async def task_event_generator(
     Flow:
     1. Yield initial state (from pre-fetched data)
     2. Yield any missed logs (from pre-fetched data)
-    3. Subscribe to Redis and yield new events
+    3. Yield any missed file changes
+    4. Subscribe to Redis and yield new events
     """
     logger.info("sse_stream_started", task_id=str(task_id))
 
@@ -153,6 +189,11 @@ async def task_event_generator(
     # 2. Yield any missed logs (for reconnection support)
     for log in missed_logs:
         yield sse_event("agent_log", log, id=log["id"])
+
+    # 3. Yield any missed file changes (for Files tab population)
+    if file_changes:
+        for fc in file_changes:
+            yield sse_event("file_verified", fc, id=fc["id"])
 
     # 3. Subscribe to Redis channel and yield events
     event_bus = get_event_bus()
@@ -236,7 +277,7 @@ async def stream_task_events(
             pass
 
     # ONE-TIME DB query - connection is released after this
-    initial_state, missed_logs = await fetch_initial_task_state(
+    initial_state, missed_logs, file_changes = await fetch_initial_task_state(
         task_id, session, last_log_id
     )
 
@@ -245,7 +286,7 @@ async def stream_task_events(
 
     # Return SSE response (generator uses Redis only)
     return EventSourceResponse(
-        task_event_generator(task_id, initial_state, missed_logs)
+        task_event_generator(task_id, initial_state, missed_logs, file_changes)
     )
 
 

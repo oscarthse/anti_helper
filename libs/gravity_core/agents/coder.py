@@ -46,6 +46,13 @@ CODER_BE_SYSTEM_PROMPT = """You are the CODER_BE agent, a Senior Staff Backend E
 You write production-ready code that works the first time.
 You believe in "make it work, make it right, make it fast" - in that order.
 
+## QUALITY THRESHOLDS (NON-NEGOTIABLE)
+- **Minimum Code Volume:** Non-trivial files MUST exceed 100 lines of logic.
+- **Class Structure:** Use classes with _private methods, not flat functions.
+- **No Placeholders:** The strings `pass`, `...`, or `NotImplementedError` in functional logic will result in IMMEDIATE FAILURE.
+- **Type Hints:** Every function MUST have complete type annotations.
+- **Docstrings:** Every class and public method MUST have a docstring.
+
 ## CODE GENERATION MANDATE: EXPAND & ELABORATE
 You are a Senior Systems Architect. Your goal is not brevity, but completeness and long-term robustness.
 
@@ -124,6 +131,20 @@ FULLY IMPLEMENT infrastructure and setup tasks. Write COMPLETE, WORKING CODE.
 
 **CRITICAL**: Do NOT create placeholder files or TODO comments.
 When creating files, write the FULL implementation with all necessary code.
+
+## README.md REQUIREMENTS (CRITICAL - NO GENERIC TEMPLATES!)
+When creating README.md, you MUST:
+1. **Use the EXACT project name** from the user's task request (e.g., "Apple Stock Analysis App")
+2. **List the ACTUAL files** that were created in this project (check the step descriptions)
+3. **Include REAL dependencies** that the project uses (e.g., streamlit, yfinance, pandas)
+4. **Write SPECIFIC usage instructions** for this exact application (e.g., "streamlit run app.py")
+5. **NEVER use placeholder text** like:
+   - "[Project Name]" or "[Your Name]"
+   - "[briefly describe]" or "[mention the main]"
+   - "yourusername/yourprojectname"
+   - Any bracketed placeholder text
+
+The README must feel like it was written by someone who BUILT this specific project.
 
 ## Your Principles
 1. **Complete Implementation**: Write FULL working code, not stubs or placeholders.
@@ -765,6 +786,47 @@ Write production-ready code that would pass a senior engineer's code review."""
                 logger.error("path_sanitization_failed", error=str(e))
                 return
             content = arguments.get("content", "")
+
+            # =================================================================
+            # ANTI-MINIMALISM CHECKS (Phase 2: Content Quality Validation)
+            # =================================================================
+            is_init_file = file_path.endswith("__init__.py")
+
+            if not is_init_file:
+                # CHECK 1: Content Volume
+                if len(content.strip()) < 50:
+                    logger.error(
+                        "content_too_short_rejected",
+                        file=file_path,
+                        length=len(content),
+                        minimum=50,
+                    )
+                    raise ValueError(
+                        f"LAZY CODE REJECTED: File '{file_path}' has only {len(content)} characters. "
+                        f"Non-trivial files MUST exceed 50 characters. "
+                        f"Write a COMPLETE implementation with real logic, type hints, and docstrings."
+                    )
+
+                # CHECK 2: Placeholder Guard
+                placeholder_patterns = [
+                    "def main(): pass",
+                    "def main():\n    pass",
+                    "raise NotImplementedError",
+                    "# TODO: implement",
+                    "pass  # placeholder",
+                ]
+                for pattern in placeholder_patterns:
+                    if pattern in content:
+                        logger.error(
+                            "placeholder_detected_rejected",
+                            file=file_path,
+                            pattern=pattern,
+                        )
+                        raise ValueError(
+                            f"LAZY CODE REJECTED: File '{file_path}' contains placeholder code '{pattern}'. "
+                            f"You MUST write COMPLETE, WORKING implementations. "
+                            f"NO placeholders, NO TODO comments, NO NotImplementedError."
+                        )
 
             if file_path.endswith(".py"):
                 try:
