@@ -22,9 +22,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator
+from typing import Any
 
 import redis.asyncio as redis
 import structlog
@@ -48,13 +49,15 @@ class Event:
     data: dict[str, Any]
 
     def to_json(self) -> str:
-        return json.dumps({
-            "event_type": self.event_type,
-            "data": self.data,
-        })
+        return json.dumps(
+            {
+                "event_type": self.event_type,
+                "data": self.data,
+            }
+        )
 
     @classmethod
-    def from_json(cls, channel: str, raw: bytes | str) -> "Event":
+    def from_json(cls, channel: str, raw: bytes | str) -> Event:
         parsed = json.loads(raw)
         return cls(
             channel=channel,

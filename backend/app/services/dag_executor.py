@@ -19,12 +19,11 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID
 
 import structlog
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.db.models import Task, TaskStatus
@@ -107,7 +106,7 @@ class DAGExecutor:
         self.context = context
 
         self.scheduler = SchedulerService(session)
-        self._start_time = datetime.now(timezone.utc)
+        self._start_time = datetime.now(UTC)
         self._tasks_completed = 0
         self._loop_iterations = 0
 
@@ -125,6 +124,7 @@ class DAGExecutor:
         """Lazy-load Referee to avoid import issues."""
         if self._referee is None:
             from gravity_core.guardrails.referee import Referee
+
             self._referee = Referee(self.repo.path)
         return self._referee
 
@@ -291,7 +291,7 @@ class DAGExecutor:
 
     def _is_timed_out(self) -> bool:
         """Check if execution has exceeded timeout."""
-        elapsed = (datetime.now(timezone.utc) - self._start_time).total_seconds()
+        elapsed = (datetime.now(UTC) - self._start_time).total_seconds()
         return elapsed > self.TIMEOUT_SECONDS
 
     async def _check_signals(self) -> str:
@@ -308,7 +308,7 @@ class DAGExecutor:
             logger.warning(
                 "dag_executor_refresh_failed_terminating",
                 root_task_id=str(self.root_task.id),
-                error=str(e)
+                error=str(e),
             )
             return "TERMINATED"
 
@@ -323,7 +323,11 @@ class DAGExecutor:
             return "TERMINATED"
 
         # Check for "ARCHIVED" or "DELETED" status if they exist
-        status_value = self.root_task.status.value if hasattr(self.root_task.status, 'value') else str(self.root_task.status)
+        status_value = (
+            self.root_task.status.value
+            if hasattr(self.root_task.status, "value")
+            else str(self.root_task.status)
+        )
         if status_value.upper() in ["ARCHIVED", "DELETED", "CANCELLED"]:
             return "TERMINATED"
 
@@ -348,8 +352,7 @@ class DAGExecutor:
     async def _all_tasks_complete(self) -> bool:
         """Check if all subtasks are complete."""
         stmt = select(func.count()).where(
-            Task.parent_task_id == self.root_task.id,
-            Task.status != TaskStatus.COMPLETED
+            Task.parent_task_id == self.root_task.id, Task.status != TaskStatus.COMPLETED
         )
         count = (await self.session.execute(stmt)).scalar()
         return count == 0
@@ -407,9 +410,7 @@ class DAGExecutor:
         # Referee Validation
         # ---------------------------------------------------------
         if task.definition_of_done:
-            is_valid, validation_msg = self.referee.validate_contract(
-                task.definition_of_done
-            )
+            is_valid, validation_msg = self.referee.validate_contract(task.definition_of_done)
 
             if not is_valid:
                 logger.warning(
@@ -431,7 +432,9 @@ class DAGExecutor:
                 # Inject feedback and retry
                 task.status = TaskStatus.PENDING
                 task.retry_count += 1
-                feedback = f"\n\n[SYSTEM FEEDBACK]: Previous attempt rejected. Reason: {validation_msg}"
+                feedback = (
+                    f"\n\n[SYSTEM FEEDBACK]: Previous attempt rejected. Reason: {validation_msg}"
+                )
                 if feedback not in task.user_request:
                     task.user_request += feedback
                 await self.session.commit()
@@ -450,6 +453,7 @@ class DAGExecutor:
         # REALITY CHECK: Verify files actually exist before COMPLETED
         # ---------------------------------------------------------
         import os
+
         files_affected = task.task_plan.get("files_affected", []) if task.task_plan else []
         repo_path = self.context.get("repo_path", ".")
 
@@ -458,6 +462,7 @@ class DAGExecutor:
             # Robus Regex Cleaning (Matches CoderAgent logic)
             # Remove [NEW], [MODIFY], [DELETE] prefix and quotes
             import re
+
             clean_path = re.sub(r"^\[.*?\]\s*", "", file_path, flags=re.IGNORECASE)
             clean_path = clean_path.strip().strip('"').strip("'")
 
@@ -484,7 +489,7 @@ class DAGExecutor:
             await self.session.commit()
             return TaskExecutionResult(
                 success=False,
-                error=f"Task failed: Expected files not found on disk: {missing_files}"
+                error=f"Task failed: Expected files not found on disk: {missing_files}",
             )
 
         # Mark task complete ONLY if files verified
@@ -509,6 +514,7 @@ class DAGExecutor:
         """Run documentation phase after all tasks complete."""
         from gravity_core.agents.docs import DocsAgent
         from gravity_core.llm import LLMClient
+
         from backend.app.config import settings
 
         self.root_task.status = TaskStatus.DOCUMENTING
@@ -531,13 +537,16 @@ class DAGExecutor:
             docs_context = {
                 **self.context,
                 "changes": [],  # TODO: Aggregate changes from subtasks
-                "plan_summary": self.root_task.task_plan.get("summary", "") if self.root_task.task_plan else "",
+                "plan_summary": self.root_task.task_plan.get("summary", "")
+                if self.root_task.task_plan
+                else "",
             }
 
             docs_output = await docs.execute(self.root_task.id, docs_context)
 
             # Log the documentation output
             from backend.app.workers.agent_runner import log_agent_output
+
             await log_agent_output(
                 session=self.session,
                 task_id=self.root_task.id,

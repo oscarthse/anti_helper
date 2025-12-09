@@ -64,13 +64,15 @@ def add_repo(
 
     if response.status_code == 201:
         data = response.json()
-        rprint(Panel(
-            f"[green]✓ Repository registered[/green]\n\n"
-            f"ID: {data['id']}\n"
-            f"Name: {data['name']}\n"
-            f"Path: {data['path']}",
-            title="Success",
-        ))
+        rprint(
+            Panel(
+                f"[green]✓ Repository registered[/green]\n\n"
+                f"ID: {data['id']}\n"
+                f"Name: {data['name']}\n"
+                f"Path: {data['path']}",
+                title="Success",
+            )
+        )
     elif response.status_code == 409:
         rprint("[yellow]Repository already registered[/yellow]")
     else:
@@ -133,14 +135,16 @@ def scan_repo(
 
     if response.status_code == 200:
         data = response.json()
-        rprint(Panel(
-            f"[green]✓ Scan complete[/green]\n\n"
-            f"Project Type: {data.get('project_type') or 'Unknown'}\n"
-            f"Framework: {data.get('framework') or 'None detected'}\n"
-            f"Files: {data.get('file_count', 0)}\n"
-            f"Directories: {data.get('directory_count', 0)}",
-            title="Repository Scan",
-        ))
+        rprint(
+            Panel(
+                f"[green]✓ Scan complete[/green]\n\n"
+                f"Project Type: {data.get('project_type') or 'Unknown'}\n"
+                f"Framework: {data.get('framework') or 'None detected'}\n"
+                f"Files: {data.get('file_count', 0)}\n"
+                f"Directories: {data.get('directory_count', 0)}",
+                title="Repository Scan",
+            )
+        )
     else:
         rprint(f"[red]Error:[/red] {response.json().get('detail', 'Unknown error')}")
         raise typer.Exit(1)
@@ -214,6 +218,7 @@ def _stream_task_progress(task_id: str) -> None:
 
         for event in client.events():
             import json
+
             data = json.loads(event.data)
 
             if event.event == "status":
@@ -222,10 +227,12 @@ def _stream_task_progress(task_id: str) -> None:
                 rprint(f"[dim]Status:[/dim] {status} {f'({agent})' if agent else ''}")
 
             elif event.event == "agent_log":
-                rprint(Panel(
-                    f"[bold]{data['ui_title']}[/bold]\n\n{data['ui_subtitle']}",
-                    title=f"🤖 {data['agent_persona'].upper()}"
-                ))
+                rprint(
+                    Panel(
+                        f"[bold]{data['ui_title']}[/bold]\n\n{data['ui_subtitle']}",
+                        title=f"🤖 {data['agent_persona'].upper()}",
+                    )
+                )
 
             elif event.event == "complete":
                 if data["status"] == "completed":
@@ -331,13 +338,15 @@ def task_status(
         "planning": "blue",
     }.get(task["status"], "white")
 
-    rprint(Panel(
-        f"[bold]Status:[/bold] [{status_color}]{task['status']}[/{status_color}]\n"
-        f"[bold]Current Agent:[/bold] {task.get('current_agent') or 'None'}\n"
-        f"[bold]Step:[/bold] {task['current_step']}\n\n"
-        f"[bold]Request:[/bold]\n{task['user_request'][:500]}",
-        title=f"Task: {task['id'][:8]}...",
-    ))
+    rprint(
+        Panel(
+            f"[bold]Status:[/bold] [{status_color}]{task['status']}[/{status_color}]\n"
+            f"[bold]Current Agent:[/bold] {task.get('current_agent') or 'None'}\n"
+            f"[bold]Step:[/bold] {task['current_step']}\n\n"
+            f"[bold]Request:[/bold]\n{task['user_request'][:500]}",
+            title=f"Task: {task['id'][:8]}...",
+        )
+    )
 
     # Agent logs
     if task.get("agent_logs"):
@@ -364,8 +373,11 @@ def approve_task(
         rprint(f"[red]Error:[/red] Task {task_id} not found")
         raise typer.Exit(1)
     else:
-        rprint(f"[red]Error:[/red] Failed to approve task: {response.status_code} - {response.text}")
+        rprint(
+            f"[red]Error:[/red] Failed to approve task: {response.status_code} - {response.text}"
+        )
         raise typer.Exit(1)
+
 
 @task_app.command("delete")
 def delete_task(
@@ -389,7 +401,6 @@ def delete_task(
     else:
         rprint(f"[red]Error:[/red] Failed to delete task: {response.status_code}")
         raise typer.Exit(1)
-
 
 
 # =============================================================================
@@ -521,6 +532,7 @@ def db_history() -> None:
 # =============================================================================
 # Main Entry
 # =============================================================================
+
 
 @app.callback()
 def main() -> None:

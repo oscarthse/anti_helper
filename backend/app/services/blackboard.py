@@ -5,12 +5,12 @@ This service manages the "Shared Brain" of the agent system.
 It allows tasks to read/write structured knowledge and inherits context
 from parent tasks.
 """
-from typing import Any, Dict, List
+
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from backend.app.db.models import KnowledgeNode, Task
 
@@ -25,7 +25,7 @@ class BlackboardService:
         self,
         task_id: UUID,
         key: str,
-        value: Dict[str, Any],
+        value: dict[str, Any],
         reasoning: str | None = None,
     ) -> KnowledgeNode:
         """
@@ -33,8 +33,7 @@ class BlackboardService:
         """
         # Check if node already exists for this task/key to update vs create
         stmt = select(KnowledgeNode).where(
-            KnowledgeNode.task_id == task_id,
-            KnowledgeNode.key == key
+            KnowledgeNode.task_id == task_id, KnowledgeNode.key == key
         )
         result = await self.session.execute(stmt)
         node = result.scalar_one_or_none()
@@ -43,18 +42,13 @@ class BlackboardService:
             node.value = value
             node.reasoning = reasoning
         else:
-            node = KnowledgeNode(
-                task_id=task_id,
-                key=key,
-                value=value,
-                reasoning=reasoning
-            )
+            node = KnowledgeNode(task_id=task_id, key=key, value=value, reasoning=reasoning)
             self.session.add(node)
 
         await self.session.flush()
         return node
 
-    async def get_context(self, task_id: UUID) -> Dict[str, Any]:
+    async def get_context(self, task_id: UUID) -> dict[str, Any]:
         """
         Resolve the full context for a task.
 
@@ -68,7 +62,7 @@ class BlackboardService:
         # 1. Fetch Lineage
         lineage = await self._get_task_lineage(task_id)
 
-        context: Dict[str, Any] = {}
+        context: dict[str, Any] = {}
 
         # 2. Iterate Root -> Self
         # Lineage returns [Self, Parent, Grandparent], so valid need reversed
@@ -86,7 +80,7 @@ class BlackboardService:
 
         return context
 
-    async def _get_task_lineage(self, task_id: UUID) -> List[Task]:
+    async def _get_task_lineage(self, task_id: UUID) -> list[Task]:
         """
         Fetch the chain of tasks from current up to root.
         Returns ordered list: [Current, Parent, Grandparent...]

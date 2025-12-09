@@ -92,9 +92,15 @@ class ProjectMap:
 
         if exclude_patterns is None:
             exclude_patterns = [
-                ".git", "node_modules", "__pycache__",
-                ".venv", "venv", ".pytest_cache",
-                "dist", "build", ".next",
+                ".git",
+                "node_modules",
+                "__pycache__",
+                ".venv",
+                "venv",
+                ".pytest_cache",
+                "dist",
+                "build",
+                ".next",
             ]
 
         self.files.clear()
@@ -206,7 +212,7 @@ class ProjectMap:
                     info.classes.append(node.name)
                 elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                     # Only top-level functions
-                    if hasattr(node, 'col_offset') and node.col_offset == 0:
+                    if hasattr(node, "col_offset") and node.col_offset == 0:
                         info.functions.append(node.name)
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
@@ -394,10 +400,7 @@ class ProjectMap:
         lines.append("## Key Files:")
 
         # Add important files
-        important_files = [
-            f for f in self.files.values()
-            if f.classes or len(f.functions) > 3
-        ]
+        important_files = [f for f in self.files.values() if f.classes or len(f.functions) > 3]
         for file_info in sorted(important_files, key=lambda f: f.path)[:20]:
             summary = []
             if file_info.classes:
@@ -410,6 +413,6 @@ class ProjectMap:
 
         # Truncate if too long (rough token estimate)
         if len(context) > max_tokens * 4:
-            context = context[:max_tokens * 4] + "\n... (truncated)"
+            context = context[: max_tokens * 4] + "\n... (truncated)"
 
         return context

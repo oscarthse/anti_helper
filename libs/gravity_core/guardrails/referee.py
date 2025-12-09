@@ -6,9 +6,10 @@ It prevents 'Hallucinated Success' (claiming a file exists when it doesn't).
 
 It is a deterministic, logic-only component.
 """
+
 from pathlib import Path
-from typing import Dict, List, Any
-import os
+from typing import Any
+
 
 class Referee:
     """
@@ -18,7 +19,7 @@ class Referee:
     def __init__(self, repo_path: str):
         self.repo_path = Path(repo_path)
 
-    def validate_contract(self, contract: Dict[str, Any] | None) -> tuple[bool, str | None]:
+    def validate_contract(self, contract: dict[str, Any] | None) -> tuple[bool, str | None]:
         """
         Check if the contract is satisfied.
 
@@ -36,7 +37,10 @@ class Referee:
         for file_rel_path in required_files:
             file_path = self.repo_path / file_rel_path
             if not file_path.exists():
-                return False, f"Contract Violation: Required file '{file_rel_path}' was not created."
+                return (
+                    False,
+                    f"Contract Violation: Required file '{file_rel_path}' was not created.",
+                )
 
         # 2. Future: Check required_tests_passed (parse JUnit/Pytest XML?)
         # 3. Future: Check required_symbols (AST check)

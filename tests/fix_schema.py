@@ -1,7 +1,7 @@
-
 import asyncio
 import os
 import sys
+
 from sqlalchemy import text
 
 # Add project root to path
@@ -9,15 +9,26 @@ sys.path.append(os.getcwd())
 
 from backend.app.db.session import engine
 
+
 async def fix_schema():
     print("Fixing Schema...")
     async with engine.begin() as conn:
         # 1. Add missing columns to tasks
         print("Adding columns...")
-        await conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id UUID REFERENCES tasks(id);"))
-        await conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS definition_of_done JSONB;"))
-        await conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;"))
-        await conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS last_heartbeat TIMESTAMP;"))
+        await conn.execute(
+            text(
+                "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id UUID REFERENCES tasks(id);"
+            )
+        )
+        await conn.execute(
+            text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS definition_of_done JSONB;")
+        )
+        await conn.execute(
+            text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;")
+        )
+        await conn.execute(
+            text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS last_heartbeat TIMESTAMP;")
+        )
 
         # 2. Update TaskStatus Enum
         # Postgres requires running this inside a transaction usually, but sometimes outside?
@@ -40,6 +51,7 @@ async def fix_schema():
                 print("Enum value 'PAUSED' already exists.")
             else:
                 print(f"Enum update warning (might already exist): {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(fix_schema())

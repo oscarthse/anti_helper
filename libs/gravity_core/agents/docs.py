@@ -185,7 +185,7 @@ class DocsAgent(BaseAgent):
     def __init__(
         self,
         llm_client: LLMClient | None = None,
-        model_name: str = "gpt-4o",
+        model_name: str | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -193,16 +193,28 @@ class DocsAgent(BaseAgent):
 
         Args:
             llm_client: LLMClient instance (created if not provided)
-            model_name: LLM model to use
+            model_name: LLM model to use (defaults to role config)
         """
         super().__init__(**kwargs)
 
-        self.model_name = model_name
+        self.persona = AgentPersona.DOCS
+
+        # Get role-specific LLM configuration
+        from gravity_core.llm.settings import get_config
+
+        config = get_config(self.persona)
+
+        self.model_name = model_name or config.model_name
+        self.temperature = config.temperature
         self.llm_client = llm_client or LLMClient()
         self._doc_changes: list[ChangeSet] = []
         self._tool_calls_made: list[ToolCall] = []
 
-        logger.info("docs_initialized", model=model_name)
+        logger.info(
+            "docs_initialized",
+            model=self.model_name,
+            temperature=self.temperature,
+        )
 
     async def execute(
         self,
@@ -276,10 +288,13 @@ class DocsAgent(BaseAgent):
             return self.build_output(
                 ui_title="📝 Documentation Updated",
                 ui_subtitle=self._generate_subtitle(),
-                technical_reasoning=json.dumps({
-                    "doc_log": doc_log.model_dump(mode='json'),
-                    "tool_calls": [tc.model_dump(mode='json') for tc in self._tool_calls_made],
-                }, indent=2),
+                technical_reasoning=json.dumps(
+                    {
+                        "doc_log": doc_log.model_dump(mode="json"),
+                        "tool_calls": [tc.model_dump(mode="json") for tc in self._tool_calls_made],
+                    },
+                    indent=2,
+                ),
                 confidence_score=confidence,
                 tool_calls=self._tool_calls_made,
             )
@@ -418,13 +433,15 @@ Generate the appropriate tool calls for each documentation update needed."""
             )
             if change:
                 self._doc_changes.append(change)
-                self._tool_calls_made.append(ToolCall(
-                    tool_name="edit_file_snippet",
-                    arguments={"file": "CHANGELOG.md", **args},
-                    result="Changelog updated",
-                    success=True,
-                    duration_ms=0,
-                ))
+                self._tool_calls_made.append(
+                    ToolCall(
+                        tool_name="edit_file_snippet",
+                        arguments={"file": "CHANGELOG.md", **args},
+                        result="Changelog updated",
+                        success=True,
+                        duration_ms=0,
+                    )
+                )
 
         elif tool_name == "update_readme":
             change = await self._update_readme(
@@ -435,13 +452,15 @@ Generate the appropriate tool calls for each documentation update needed."""
             )
             if change:
                 self._doc_changes.append(change)
-                self._tool_calls_made.append(ToolCall(
-                    tool_name="edit_file_snippet",
-                    arguments={"file": "README.md", **args},
-                    result="README updated",
-                    success=True,
-                    duration_ms=0,
-                ))
+                self._tool_calls_made.append(
+                    ToolCall(
+                        tool_name="edit_file_snippet",
+                        arguments={"file": "README.md", **args},
+                        result="README updated",
+                        success=True,
+                        duration_ms=0,
+                    )
+                )
 
         elif tool_name == "add_docstring":
             change = await self._add_docstring(
@@ -452,13 +471,15 @@ Generate the appropriate tool calls for each documentation update needed."""
             )
             if change:
                 self._doc_changes.append(change)
-                self._tool_calls_made.append(ToolCall(
-                    tool_name="edit_file_snippet",
-                    arguments=args,
-                    result="Docstring added",
-                    success=True,
-                    duration_ms=0,
-                ))
+                self._tool_calls_made.append(
+                    ToolCall(
+                        tool_name="edit_file_snippet",
+                        arguments=args,
+                        result="Docstring added",
+                        success=True,
+                        duration_ms=0,
+                    )
+                )
 
     async def _update_changelog(
         self,
@@ -617,10 +638,13 @@ Generate the appropriate tool calls for each documentation update needed."""
         return self.build_output(
             ui_title="📝 Documentation Review Complete",
             ui_subtitle="No documentation updates required for this task.",
-            technical_reasoning=json.dumps({
-                "status": "no_updates_needed",
-                "reason": "No code changes were provided to document",
-            }, indent=2),
+            technical_reasoning=json.dumps(
+                {
+                    "status": "no_updates_needed",
+                    "reason": "No code changes were provided to document",
+                },
+                indent=2,
+            ),
             confidence_score=0.95,
         )
 

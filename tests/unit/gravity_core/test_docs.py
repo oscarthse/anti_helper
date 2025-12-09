@@ -65,7 +65,7 @@ class TestDocsAgentExecution:
                         },
                     },
                 ],
-            }
+            },
         )
 
         # Mock tool calls
@@ -117,7 +117,7 @@ class TestDocsAgentExecution:
                         },
                     },
                 ],
-            }
+            },
         )
 
         # Mock successful tool executions
@@ -192,7 +192,7 @@ class TestDocsAgentExecution:
                         },
                     },
                 ],
-            }
+            },
         )
 
         docs_agent.call_tool.return_value = MagicMock(
@@ -225,6 +225,7 @@ class TestDocsAgentPromptBuilding:
     def docs_agent(self):
         """Create DocsAgent without LLM for unit testing."""
         from gravity_core.agents.docs import DocsAgent
+
         return DocsAgent()
 
     def test_build_doc_prompt_includes_changes(self, docs_agent):
@@ -280,6 +281,7 @@ class TestDocsAgentHelpers:
     def docs_agent(self):
         """Create DocsAgent for testing."""
         from gravity_core.agents.docs import ChangeSet, DocsAgent
+
         agent = DocsAgent()
         agent._doc_changes = [
             ChangeSet(

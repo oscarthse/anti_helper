@@ -8,42 +8,33 @@ and run code formatting/linting.
 import subprocess
 from pathlib import Path
 
-from gravity_core.schema import FileOpResult
 import structlog
 
+from gravity_core.schema import FileOpResult
 from gravity_core.tools.registry import tool
+from gravity_core.tracking import record_file_change
 
 logger = structlog.get_logger()
 
 
 @tool(
     name="edit_file_snippet",
-    description="Surgical editing: Replace a small block of code in a file. "
-    "Prevents the agent from accidentally deleting surrounding lines.",
+    description="Replace text in a file. MUST read file first. Replaces *exact* string match.",
     schema={
         "type": "object",
         "properties": {
-            "path": {
-                "type": "string",
-                "description": "Path to the file to edit"
-            },
-            "old_content": {
-                "type": "string",
-                "description": "Exact content to replace (must match exactly)"
-            },
-            "new_content": {
-                "type": "string",
-                "description": "New content to insert"
-            },
+            "path": {"type": "string", "description": "Absolute path to file"},
+            "old_content": {"type": "string", "description": "Exact text to replace"},
+            "new_content": {"type": "string", "description": "New text to insert"},
             "occurrence": {
                 "type": "integer",
-                "description": "Which occurrence to replace (1-indexed, 0 for all)",
-                "default": 1
-            }
+                "description": "Which occurrence to replace (1-indexed)",
+                "default": 1,
+            },
         },
-        "required": ["path", "old_content", "new_content"]
+        "required": ["path", "old_content", "new_content"],
     },
-    category="manipulation"
+    category="manipulation",
 )
 async def edit_file_snippet(
     path: str,
@@ -58,14 +49,31 @@ async def edit_file_snippet(
     """
     logger.info("edit_file_snippet", path=path, occurrence=occurrence)
 
+    # ---------------------------------------------------------------
+    # POLICY CHECK: Read-Before-Write
+    # ---------------------------------------------------------------
+    from gravity_core.tools.policies import get_current_policy
+
+    policy = get_current_policy()
+    if policy:
+        if not policy.can_edit(path):
+            error_msg = f"Policy Violation: You must read file '{path}' before editing it."
+            logger.warning("policy_violation_edit_blocked", path=path)
+            return FileOpResult(
+                success=False, path=path, operation="edit", error=error_msg, diff=None
+            )
+
     file_path = Path(path)
     if not file_path.exists():
-        return FileOpResult(success=False, path=path, operation="edit", error=f"File does not exist: {path}")
-
+        return FileOpResult(
+            success=False, path=path, operation="edit", error=f"File does not exist: {path}"
+        )
     try:
         original = file_path.read_text()
     except Exception as e:
-        return FileOpResult(success=False, path=path, operation="edit", error=f"Could not read file: {e}")
+        return FileOpResult(
+            success=False, path=path, operation="edit", error=f"Could not read file: {e}"
+        )
 
     # Count occurrences
     count = original.count(old_content)
@@ -74,14 +82,13 @@ async def edit_file_snippet(
             success=False,
             path=path,
             operation="edit",
-            error="Old content not found in file. Hint: Make sure the content matches exactly, including whitespace"
+            error="Old content not found in file. Hint: Make sure the content matches exactly, including whitespace",
         )
 
     # Replace content
     if occurrence == 0:
         # Replace all occurrences
         modified = original.replace(old_content, new_content)
-        replaced_count = count
     else:
         # Replace specific occurrence
         if occurrence > count:
@@ -89,7 +96,7 @@ async def edit_file_snippet(
                 success=False,
                 path=path,
                 operation="edit",
-                error=f"Occurrence {occurrence} not found (only {count} matches)"
+                error=f"Occurrence {occurrence} not found (only {count} matches)",
             )
 
         # Find and replace nth occurrence
@@ -97,8 +104,7 @@ async def edit_file_snippet(
         for i in range(occurrence):
             idx = original.find(old_content, idx + 1)
 
-        modified = original[:idx] + new_content + original[idx + len(old_content):]
-        replaced_count = 1
+        modified = original[:idx] + new_content + original[idx + len(old_content) :]
 
     # Write the modified content
     try:
@@ -106,18 +112,18 @@ async def edit_file_snippet(
 
         # SLEDGEHAMMER VERIFICATION
         if not file_path.exists():
-             raise RuntimeError(f"CRITICAL: Edit failed. {file_path} disappeared from disk.")
+            raise RuntimeError(f"CRITICAL: Edit failed. {file_path} disappeared from disk.")
 
         if len(modified) > 0 and file_path.stat().st_size == 0:
-             raise RuntimeError(f"CRITICAL: Wrote 0 bytes to {file_path} during edit.")
+            raise RuntimeError(f"CRITICAL: Wrote 0 bytes to {file_path} during edit.")
 
     except Exception as e:
         return FileOpResult(
-            success=False,
-            path=path,
-            operation="edit",
-            error=f"Could not save file: {e}"
+            success=False, path=path, operation="edit", error=f"Could not save file: {e}"
         )
+
+    # Record metric
+    record_file_change(str(file_path.absolute()))
 
     return FileOpResult(
         success=True,
@@ -136,28 +142,22 @@ async def edit_file_snippet(
     schema={
         "type": "object",
         "properties": {
-            "path": {
-                "type": "string",
-                "description": "Path to create the file at"
-            },
-            "content": {
-                "type": "string",
-                "description": "Content to write to the file"
-            },
+            "path": {"type": "string", "description": "Path to create the file at"},
+            "content": {"type": "string", "description": "Content to write to the file"},
             "create_init": {
                 "type": "boolean",
                 "description": "Create __init__.py in parent directories if needed",
-                "default": True
+                "default": True,
             },
             "overwrite": {
                 "type": "boolean",
                 "description": "Overwrite if file exists",
-                "default": False
-            }
+                "default": False,
+            },
         },
-        "required": ["path", "content"]
+        "required": ["path", "content"],
     },
-    category="manipulation"
+    category="manipulation",
 )
 async def create_new_module(
     path: str,
@@ -168,7 +168,6 @@ async def create_new_module(
     """
     Create a new file with proper directory structure.
     """
-    import os
 
     logger.info("create_new_module", path=path)
 
@@ -180,14 +179,19 @@ async def create_new_module(
             success=False,
             path=path,
             operation="create",
-            error=f"File already exists: {path}. Hint: Set overwrite=True to replace existing file"
+            error=f"File already exists: {path}. Hint: Set overwrite=True to replace existing file",
         )
 
     # Create parent directories
     try:
         file_path.parent.mkdir(parents=True, exist_ok=True)
     except PermissionError as e:
-        return FileOpResult(success=False, path=path, operation="create", error=f"Permission denied creating directory: {e}")
+        return FileOpResult(
+            success=False,
+            path=path,
+            operation="create",
+            error=f"Permission denied creating directory: {e}",
+        )
 
     # Define safe boundaries for __init__.py creation
     # Stop at these directories and don't go above them
@@ -213,10 +217,12 @@ async def create_new_module(
                 break
 
             # Stop at common project roots
-            if (current / "pyproject.toml").exists() or \
-               (current / "setup.py").exists() or \
-               (current / ".git").exists() or \
-               (current / "package.json").exists():
+            if (
+                (current / "pyproject.toml").exists()
+                or (current / "setup.py").exists()
+                or (current / ".git").exists()
+                or (current / "package.json").exists()
+            ):
                 break
 
             init_path = current / "__init__.py"
@@ -240,22 +246,28 @@ async def create_new_module(
         # SLEDGEHAMMER VERIFICATION (Protocol Code Red)
         # 1. Reality Check
         if not file_path.exists():
-            raise RuntimeError(f"CRITICAL: Write operation failed. {file_path} does not exist on disk.")
+            raise RuntimeError(
+                f"CRITICAL: Write operation failed. {file_path} does not exist on disk."
+            )
 
         # 2. Size Check
         written_size = file_path.stat().st_size
         if len(content) > 0 and written_size == 0:
-            raise RuntimeError(f"CRITICAL: Wrote 0 bytes to {file_path} but content was not empty. File system may be mocked or corrupted.")
+            raise RuntimeError(
+                f"CRITICAL: Wrote 0 bytes to {file_path} but content was not empty. File system may be mocked or corrupted."
+            )
 
     except Exception as e:
         logger.exception("create_new_module_failed_exception", path=path, error=str(e))
         # Ensure we return the error
         return FileOpResult(
-            success=False,
-            path=path,
-            operation="create",
-            error=f"Could not write file: {e}"
+            success=False, path=path, operation="create", error=f"Could not write file: {e}"
         )
+
+    # Record metric
+    record_file_change(str(file_path.absolute()))
+    for init_file in init_files_created:
+        record_file_change(init_file)
 
     return FileOpResult(
         success=True,
@@ -263,7 +275,7 @@ async def create_new_module(
         operation="create",
         size_bytes=len(content),
         verification_passed=True,
-        data={"init_files_created": init_files_created}
+        data={"init_files_created": init_files_created},
     )
 
 
@@ -274,24 +286,17 @@ async def create_new_module(
     schema={
         "type": "object",
         "properties": {
-            "path": {
-                "type": "string",
-                "description": "Path to file or directory to lint"
-            },
+            "path": {"type": "string", "description": "Path to file or directory to lint"},
             "fix": {
                 "type": "boolean",
                 "description": "Automatically fix issues where possible",
-                "default": True
+                "default": True,
             },
-            "format": {
-                "type": "boolean",
-                "description": "Also format the code",
-                "default": True
-            }
+            "format": {"type": "boolean", "description": "Also format the code", "default": True},
         },
-        "required": ["path"]
+        "required": ["path"],
     },
-    category="manipulation"
+    category="manipulation",
 )
 async def run_linter_fix(
     path: str,

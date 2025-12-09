@@ -1,0 +1,14 @@
+id: "04_add_redis_caching"
+repo_id: "backend_example_repo"
+description: |
+  Add Redis caching layer for frequently accessed data.
+  Requirements:
+    - Create CacheService wrapper around Redis client
+    - Add caching to user profile endpoint
+    - Implement cache invalidation on user updates
+    - Add configuration for cache TTL
+tags:
+  - "infrastructure"
+  - "performance"
+  - "caching"
+timeout_seconds: 900

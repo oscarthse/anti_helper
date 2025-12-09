@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, model_validator
 
 class FileAction(str, Enum):
     """Types of file operations."""
+
     CREATE = "create"
     UPDATE = "update"
     DELETE = "delete"
@@ -57,16 +58,12 @@ class VerifiedFileAction(BaseModel):
 
         # REALITY CHECK 1: File must exist on disk
         if not os.path.exists(self.path):
-            raise ValueError(
-                f"Reality Breach: File not found on disk: {self.path}"
-            )
+            raise ValueError(f"Reality Breach: File not found on disk: {self.path}")
 
         # REALITY CHECK 2: File must not be empty
         file_size = os.path.getsize(self.path)
         if file_size == 0:
-            raise ValueError(
-                f"Quality Fail: File is empty (0 bytes): {self.path}"
-            )
+            raise ValueError(f"Quality Fail: File is empty (0 bytes): {self.path}")
 
         # Update byte_size from actual file
         object.__setattr__(self, "byte_size", file_size)
@@ -94,22 +91,20 @@ class VerifiedFileAction(BaseModel):
         for i, line in enumerate(lines):
             if todo_pattern.search(line):
                 # Check if next 3 lines have actual code (not just pass/...)
-                next_lines = lines[i+1:i+4]
+                next_lines = lines[i + 1 : i + 4]
                 has_implementation = any(
-                    l.strip() and
-                    l.strip() not in ("pass", "...", "") and
-                    not l.strip().startswith("#")
+                    l.strip()
+                    and l.strip() not in ("pass", "...", "")
+                    and not l.strip().startswith("#")
                     for l in next_lines
                 )
                 if not has_implementation:
-                    self.quality_warnings.append(
-                        f"Line {i+1}: TODO without implementation"
-                    )
+                    self.quality_warnings.append(f"Line {i+1}: TODO without implementation")
 
         # Check 2: Functions with only 'pass' as body
         pass_only_pattern = re.compile(
             r"def\s+\w+\s*\([^)]*\)\s*(?:->[^:]+)?:\s*\n\s+(?:\"\"\"[^\"]*\"\"\"\s*\n\s+)?pass\s*$",
-            re.MULTILINE
+            re.MULTILINE,
         )
         pass_matches = pass_only_pattern.findall(content)
         if pass_matches:
@@ -137,11 +132,13 @@ class VerifiedFileAction(BaseModel):
             )
 
         # Record passed checks
-        self.quality_checks_passed.extend([
-            "file_exists",
-            "file_not_empty",
-            "no_pass_only_functions",
-        ])
+        self.quality_checks_passed.extend(
+            [
+                "file_exists",
+                "file_not_empty",
+                "no_pass_only_functions",
+            ]
+        )
 
         if not self.quality_warnings:
             self.quality_checks_passed.append("all_quality_checks_passed")

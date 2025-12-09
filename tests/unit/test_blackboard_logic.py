@@ -1,11 +1,12 @@
+from datetime import UTC, datetime
+from uuid import uuid4
 
 import pytest
-from uuid import uuid4
-from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.db.models import Task, Repository, TaskStatus
+from backend.app.db.models import Repository, Task, TaskStatus
 from backend.app.services.blackboard import BlackboardService
+
 
 @pytest.mark.asyncio
 async def test_blackboard_scope_resolution(db_session: AsyncSession):
@@ -22,22 +23,36 @@ async def test_blackboard_scope_resolution(db_session: AsyncSession):
 
     # Root Task
     root = Task(
-        id=uuid4(), repo_id=repo_id, user_request="Root", status=TaskStatus.PLANNING,
-        created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)
+        id=uuid4(),
+        repo_id=repo_id,
+        user_request="Root",
+        status=TaskStatus.PLANNING,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     db_session.add(root)
 
     # Child Task
     child = Task(
-        id=uuid4(), repo_id=repo_id, parent_task_id=root.id, user_request="Child", status=TaskStatus.PLANNING,
-        created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)
+        id=uuid4(),
+        repo_id=repo_id,
+        parent_task_id=root.id,
+        user_request="Child",
+        status=TaskStatus.PLANNING,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     db_session.add(child)
 
     # Grandchild Task
     grandchild = Task(
-        id=uuid4(), repo_id=repo_id, parent_task_id=child.id, user_request="Grandchild", status=TaskStatus.PLANNING,
-        created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)
+        id=uuid4(),
+        repo_id=repo_id,
+        parent_task_id=child.id,
+        user_request="Grandchild",
+        status=TaskStatus.PLANNING,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     db_session.add(grandchild)
 

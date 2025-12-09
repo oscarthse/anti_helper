@@ -1,0 +1,14 @@
+id: "03_refactor_auth_service"
+repo_id: "backend_example_repo"
+description: |
+  Extract authentication logic into a reusable service class.
+  Requirements:
+    - Create AuthService class with login, logout, verify_token methods
+    - Move existing auth logic from endpoints to service
+    - Maintain backward compatibility with existing API
+    - Add docstrings and type hints
+tags:
+  - "backend"
+  - "refactoring"
+  - "architecture"
+timeout_seconds: 900

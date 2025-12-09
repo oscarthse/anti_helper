@@ -33,12 +33,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from backend.app.core.events import (
-    Event,
     get_event_bus,
     global_channel,
     task_channel,
 )
-from backend.app.db import AgentLog, Task, TaskStatus, get_session
+from backend.app.db import AgentLog, Task, get_session
 
 logger = structlog.get_logger()
 
@@ -79,9 +78,7 @@ async def fetch_initial_task_state(
         Tuple of (task_state, missed_logs)
     """
     # Get task
-    result = await session.execute(
-        select(Task).where(Task.id == task_id)
-    )
+    result = await session.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
 
     if not task:
@@ -97,7 +94,6 @@ async def fetch_initial_task_state(
     # Get any logs created after last_log_id (for reconnection)
     # CRITICAL: Include logs from BOTH root task AND its subtasks
     # Frontend subscribes to root task, but logs are created with subtask IDs
-    from sqlalchemy import or_
 
     # Get subtask IDs for this root task
     subtask_query = select(Task.id).where(Task.parent_task_id == task_id)
@@ -107,9 +103,7 @@ async def fetch_initial_task_state(
     # Query logs from root task OR any of its subtasks
     all_task_ids = [task_id] + subtask_ids
     log_query = (
-        select(AgentLog)
-        .where(AgentLog.task_id.in_(all_task_ids))
-        .order_by(AgentLog.created_at)
+        select(AgentLog).where(AgentLog.task_id.in_(all_task_ids)).order_by(AgentLog.created_at)
     )
     if last_log_id:
         log_query = log_query.where(AgentLog.id > last_log_id)
@@ -136,9 +130,7 @@ async def fetch_initial_task_state(
     from backend.app.db.models import ChangeSet
 
     changeset_query = (
-        select(ChangeSet)
-        .where(ChangeSet.task_id.in_(all_task_ids))
-        .order_by(ChangeSet.created_at)
+        select(ChangeSet).where(ChangeSet.task_id.in_(all_task_ids)).order_by(ChangeSet.created_at)
     )
     changeset_result = await session.execute(changeset_query)
     changesets = changeset_result.scalars().all()

@@ -25,6 +25,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
     """Base class for all models."""
+
     pass
 
 
@@ -34,6 +35,7 @@ class TaskDependency(Base):
 
     blocker_task_id MUST be completed before blocked_task_id can proceed.
     """
+
     __tablename__ = "task_dependencies"
 
     blocker_task_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tasks.id"), primary_key=True)
@@ -51,6 +53,7 @@ class KnowledgeNode(Base):
     Represents a unit of knowledge (Fact, Schema, Decision) tied to a Task.
     Nodes form a knowledge graph that child tasks can inherit.
     """
+
     __tablename__ = "knowledge_nodes"
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
@@ -61,11 +64,12 @@ class KnowledgeNode(Base):
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     # Relationship
     task: Mapped["Task"] = relationship("Task", back_populates="knowledge_nodes")
-
 
 
 class TaskStatus(str, enum.Enum):
@@ -165,6 +169,12 @@ class Task(Base):
     )
     current_agent: Mapped[str | None] = mapped_column(String(50), nullable=True)
     current_step: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Phase 1 Quality Metrics
+    files_changed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    fix_attempts_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tests_run_command: Mapped[str | None] = mapped_column(String, nullable=True)
+    tests_exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Planning output
     task_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -322,6 +332,9 @@ class ChangeSet(Base):
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Metadata
+    files_created: Mapped[list[str]] = mapped_column(JSON, default=list)
+    files_updated: Mapped[list[str]] = mapped_column(JSON, default=list)
+    files_deleted: Mapped[list[str]] = mapped_column(JSON, default=list)
     language: Mapped[str | None] = mapped_column(String(50), nullable=True)
     lines_added: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     lines_removed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

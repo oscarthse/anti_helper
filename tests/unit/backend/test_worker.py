@@ -94,14 +94,17 @@ class TestWorkerOrchestration:
         """
         Test happy path: Task is processed and moves to EXECUTING state.
         """
+        from gravity_core.schema import TaskContext
+
         from backend.app.db.models import TaskStatus
         from backend.app.workers.agent_runner import _run_planning_phase
 
         # Mock dependencies at their source locations
-        with patch('gravity_core.llm.LLMClient') as mock_llm_class, \
-             patch('gravity_core.memory.project_map.ProjectMap') as mock_pm_class, \
-             patch('gravity_core.agents.planner.PlannerAgent') as mock_planner_class:
-
+        with (
+            patch("gravity_core.llm.LLMClient") as mock_llm_class,
+            patch("gravity_core.memory.project_map.ProjectMap") as mock_pm_class,
+            patch("gravity_core.agents.planner.PlannerAgent") as mock_planner_class,
+        ):
             # Setup LLMClient mock
             mock_llm = MagicMock()
             mock_llm_class.return_value = mock_llm
@@ -117,12 +120,17 @@ class TestWorkerOrchestration:
             mock_planner.execute = AsyncMock(return_value=mock_agent_output_high_confidence)
             mock_planner_class.return_value = mock_planner
 
-            # Execute
+            # Execute with TaskContext object instead of dict
+            context = TaskContext(
+                task_id=mock_task.id,
+                user_request="Add validation",
+                repo_path="/tmp",
+            )
             success, error = await _run_planning_phase(
                 session=mock_session,
                 task=mock_task,
                 repo=mock_repo,
-                context={"user_request": "Add validation", "repo_path": "/tmp"},
+                context=context,
             )
 
             # Assert
@@ -142,13 +150,16 @@ class TestWorkerOrchestration:
         """
         Test: Low confidence score triggers PLAN_REVIEW state.
         """
+        from gravity_core.schema import TaskContext
+
         from backend.app.db.models import TaskStatus
         from backend.app.workers.agent_runner import _run_planning_phase
 
-        with patch('gravity_core.llm.LLMClient') as mock_llm_class, \
-             patch('gravity_core.memory.project_map.ProjectMap') as mock_pm_class, \
-             patch('gravity_core.agents.planner.PlannerAgent') as mock_planner_class:
-
+        with (
+            patch("gravity_core.llm.LLMClient") as mock_llm_class,
+            patch("gravity_core.memory.project_map.ProjectMap") as mock_pm_class,
+            patch("gravity_core.agents.planner.PlannerAgent") as mock_planner_class,
+        ):
             mock_llm_class.return_value = MagicMock()
 
             mock_pm = MagicMock()
@@ -160,12 +171,17 @@ class TestWorkerOrchestration:
             mock_planner.execute = AsyncMock(return_value=mock_agent_output_low_confidence)
             mock_planner_class.return_value = mock_planner
 
-            # Execute
+            # Execute with TaskContext object
+            context = TaskContext(
+                task_id=mock_task.id,
+                user_request="Risky change",
+                repo_path="/tmp",
+            )
             success, error = await _run_planning_phase(
                 session=mock_session,
                 task=mock_task,
                 repo=mock_repo,
-                context={"user_request": "Risky change", "repo_path": "/tmp"},
+                context=context,
             )
 
             # Assert: Low confidence → PLAN_REVIEW
@@ -183,12 +199,15 @@ class TestWorkerOrchestration:
         """
         Test: AgentLog entry is created when PlannerAgent returns.
         """
+        from gravity_core.schema import TaskContext
+
         from backend.app.workers.agent_runner import _run_planning_phase
 
-        with patch('gravity_core.llm.LLMClient') as mock_llm_class, \
-             patch('gravity_core.memory.project_map.ProjectMap') as mock_pm_class, \
-             patch('gravity_core.agents.planner.PlannerAgent') as mock_planner_class:
-
+        with (
+            patch("gravity_core.llm.LLMClient") as mock_llm_class,
+            patch("gravity_core.memory.project_map.ProjectMap") as mock_pm_class,
+            patch("gravity_core.agents.planner.PlannerAgent") as mock_planner_class,
+        ):
             mock_llm_class.return_value = MagicMock()
 
             mock_pm = MagicMock()
@@ -200,12 +219,17 @@ class TestWorkerOrchestration:
             mock_planner.execute = AsyncMock(return_value=mock_agent_output_high_confidence)
             mock_planner_class.return_value = mock_planner
 
-            # Execute
+            # Execute with TaskContext object
+            context = TaskContext(
+                task_id=mock_task.id,
+                user_request="Test",
+                repo_path="/tmp",
+            )
             await _run_planning_phase(
                 session=mock_session,
                 task=mock_task,
                 repo=mock_repo,
-                context={"user_request": "Test", "repo_path": "/tmp"},
+                context=context,
             )
 
             # Assert: session.add was called with an AgentLog
@@ -213,8 +237,8 @@ class TestWorkerOrchestration:
             added_obj = mock_session.add.call_args[0][0]
 
             # Verify it's an AgentLog-like object
-            assert hasattr(added_obj, 'ui_title')
-            assert hasattr(added_obj, 'confidence_score')
+            assert hasattr(added_obj, "ui_title")
+            assert hasattr(added_obj, "confidence_score")
 
 
 class TestLogAgentOutput:
@@ -232,7 +256,7 @@ class TestLogAgentOutput:
         mock_session.flush = AsyncMock()  # Must be async now
 
         # Mock get_event_bus
-        with patch('backend.app.core.events.get_event_bus') as mock_get_bus:
+        with patch("backend.app.core.events.get_event_bus") as mock_get_bus:
             mock_bus = MagicMock()
             mock_bus.publish_task_event = AsyncMock()
             mock_get_bus.return_value = mock_bus
@@ -269,10 +293,11 @@ class TestTaskNotFound:
         from backend.app.workers.agent_runner import _run_task_async
 
         # Mock database engine and session factory
-        with patch('backend.app.workers.agent_runner._create_worker_engine', AsyncMock()), \
-             patch('backend.app.workers.agent_runner.async_sessionmaker') as mock_factory:
-
-                await _run_task_async("non-existent-id")
+        with (
+            patch("backend.app.workers.agent_runner._create_worker_engine", AsyncMock()),
+            patch("backend.app.workers.agent_runner.async_sessionmaker"),
+        ):
+            await _run_task_async("non-existent-id")
 
 
 class TestResumeTask:
@@ -287,18 +312,19 @@ class TestResumeTask:
         mock_task = MagicMock()
         mock_task.status = TaskStatus.PLAN_REVIEW
 
-        with patch('backend.app.workers.agent_runner._create_worker_engine', AsyncMock()), \
-             patch('backend.app.workers.agent_runner.async_sessionmaker') as mock_factory:
-
+        with (
+            patch("backend.app.workers.agent_runner._create_worker_engine", AsyncMock()),
+            patch("backend.app.workers.agent_runner.async_sessionmaker") as mock_factory,
+        ):
             mock_session = MagicMock()
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock(return_value=None)
             mock_session.commit = AsyncMock()
             mock_factory.return_value.return_value = mock_session
 
-            with patch('backend.app.workers.agent_runner._get_task',
-                       AsyncMock(return_value=mock_task)):
-
+            with patch(
+                "backend.app.workers.agent_runner._get_task", AsyncMock(return_value=mock_task)
+            ):
                 await _resume_task_async("task-id", approved=True)
 
                 assert mock_task.status == TaskStatus.EXECUTING
@@ -312,18 +338,19 @@ class TestResumeTask:
         mock_task = MagicMock()
         mock_task.status = TaskStatus.PLAN_REVIEW
 
-        with patch('backend.app.workers.agent_runner._create_worker_engine', AsyncMock()), \
-             patch('backend.app.workers.agent_runner.async_sessionmaker') as mock_factory:
-
+        with (
+            patch("backend.app.workers.agent_runner._create_worker_engine", AsyncMock()),
+            patch("backend.app.workers.agent_runner.async_sessionmaker") as mock_factory,
+        ):
             mock_session = MagicMock()
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock(return_value=None)
             mock_session.commit = AsyncMock()
             mock_factory.return_value.return_value = mock_session
 
-            with patch('backend.app.workers.agent_runner._get_task',
-                       AsyncMock(return_value=mock_task)):
-
+            with patch(
+                "backend.app.workers.agent_runner._get_task", AsyncMock(return_value=mock_task)
+            ):
                 await _resume_task_async("task-id", approved=False)
 
                 assert mock_task.status == TaskStatus.FAILED

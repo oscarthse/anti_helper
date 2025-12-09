@@ -1,0 +1,22 @@
+id: "01_todo_api"
+repo_id: "test_agent"
+description: |
+  Create a complete REST API for a todo list application in the 'todo_api' subdirectory.
+  
+  Requirements:
+  - Create todo_api/ directory with proper structure
+  - FastAPI backend with CRUD endpoints (GET, POST, PUT, DELETE)
+  - SQLite database with SQLAlchemy ORM
+  - Pydantic models for request/response validation
+  - At least 3 endpoints: list todos, create todo, mark complete
+  - Include requirements.txt with dependencies
+  - Add README.md with setup and usage instructions
+  - Write pytest tests for all endpoints
+  - Include proper error handling and status codes
+  
+  The project should be production-ready and fully functional.
+tags:
+  - "backend"
+  - "api"
+  - "from_scratch"
+timeout_seconds: 1200

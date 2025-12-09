@@ -10,11 +10,11 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.db import Repository, Task, TaskStatus, TaskDependency, get_session
+from backend.app.db import Repository, Task, TaskDependency, TaskStatus, get_session
 
 logger = structlog.get_logger()
 
@@ -105,9 +105,7 @@ async def create_task(
     logger.info("creating_task", repo_id=str(task_in.repo_id))
 
     # Verify repository exists
-    repo_result = await session.execute(
-        select(Repository).where(Repository.id == task_in.repo_id)
-    )
+    repo_result = await session.execute(select(Repository).where(Repository.id == task_in.repo_id))
     repo = repo_result.scalar_one_or_none()
     if not repo:
         raise HTTPException(
@@ -131,6 +129,7 @@ async def create_task(
 
     # Dispatch to worker queue
     from backend.app.workers.agent_runner import run_task
+
     run_task.send(str(task.id))
 
     return task
@@ -139,7 +138,7 @@ async def create_task(
 @router.get("/", response_model=list[TaskResponse])
 async def list_tasks(
     repo_id: UUID | None = None,
-    parent_task_id: UUID | None = None, # Start supporting hierarchical fetch
+    parent_task_id: UUID | None = None,  # Start supporting hierarchical fetch
     status_filter: TaskStatus | None = None,
     limit: int = 50,
     offset: int = 0,
@@ -183,9 +182,7 @@ async def get_task(
     """Get a task by ID with its agent logs."""
 
     result = await session.execute(
-        select(Task)
-        .where(Task.id == task_id)
-        .options(selectinload(Task.agent_logs))
+        select(Task).where(Task.id == task_id).options(selectinload(Task.agent_logs))
     )
     task = result.scalar_one_or_none()
 
@@ -208,9 +205,7 @@ async def execute_task(
 
     This dispatches the task to the worker queue.
     """
-    result = await session.execute(
-        select(Task).where(Task.id == task_id)
-    )
+    result = await session.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
 
     if not task:
@@ -231,6 +226,7 @@ async def execute_task(
 
     # Dispatch to worker
     from backend.app.workers.agent_runner import run_task
+
     run_task.send(str(task.id))
 
     logger.info("task_execution_triggered", task_id=str(task_id))
@@ -245,9 +241,7 @@ async def cancel_task(
 ) -> dict:
     """Cancel a running task."""
 
-    result = await session.execute(
-        select(Task).where(Task.id == task_id)
-    )
+    result = await session.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
 
     if not task:
@@ -278,9 +272,7 @@ async def approve_task_plan(
 ) -> dict:
     """Approve a task plan and continue execution."""
 
-    result = await session.execute(
-        select(Task).where(Task.id == task_id)
-    )
+    result = await session.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
 
     if not task:
@@ -301,6 +293,7 @@ async def approve_task_plan(
 
     # Resume worker execution
     from backend.app.workers.agent_runner import resume_task
+
     resume_task.send(str(task.id), approved=True)
 
     logger.info("task_plan_approved", task_id=str(task_id))
@@ -380,9 +373,7 @@ async def delete_task(
     """
     from backend.app.db import AgentLog, KnowledgeNode
 
-    result = await session.execute(
-        select(Task).where(Task.id == task_id)
-    )
+    result = await session.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
 
     if not task:
@@ -408,27 +399,21 @@ async def delete_task(
     )
 
     # 1. Delete agent logs for all tasks
-    await session.execute(
-        delete(AgentLog).where(AgentLog.task_id.in_(all_task_ids))
-    )
+    await session.execute(delete(AgentLog).where(AgentLog.task_id.in_(all_task_ids)))
 
     # 2. Delete knowledge nodes for all tasks
-    await session.execute(
-        delete(KnowledgeNode).where(KnowledgeNode.task_id.in_(all_task_ids))
-    )
+    await session.execute(delete(KnowledgeNode).where(KnowledgeNode.task_id.in_(all_task_ids)))
 
     # 3. Delete dependencies involving any of these tasks
     await session.execute(
         delete(TaskDependency).where(
-            (TaskDependency.blocker_task_id.in_(all_task_ids)) |
-            (TaskDependency.blocked_task_id.in_(all_task_ids))
+            (TaskDependency.blocker_task_id.in_(all_task_ids))
+            | (TaskDependency.blocked_task_id.in_(all_task_ids))
         )
     )
 
     # 4. Delete subtasks first (FK constraint)
-    await session.execute(
-        delete(Task).where(Task.parent_task_id == task_id)
-    )
+    await session.execute(delete(Task).where(Task.parent_task_id == task_id))
 
     # 5. Delete root task
     await session.delete(task)

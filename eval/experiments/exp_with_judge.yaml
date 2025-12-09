@@ -1,0 +1,12 @@
+experiment_id: "exp_with_judge"
+description: "Experiment with LLM judge evaluation enabled"
+use_judge: true
+llm:
+  planner_temperature: 0.35
+  coder_temperature: 0.25
+  qa_temperature: 0.25
+  docs_temperature: 0.60
+policies:
+  read_before_write: true
+  linter_blocking: false
+  max_fix_attempts: 3

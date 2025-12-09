@@ -1,11 +1,12 @@
+from datetime import UTC, datetime
+from uuid import uuid4
 
 import pytest
-from uuid import uuid4
-from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.db.models import Task, Repository, TaskStatus, TaskDependency
+from backend.app.db.models import Repository, Task, TaskDependency, TaskStatus
 from backend.app.services.scheduler import SchedulerService
+
 
 @pytest.mark.asyncio
 async def test_scheduler_dependency_resolution(db_session: AsyncSession):
@@ -29,17 +30,57 @@ async def test_scheduler_dependency_resolution(db_session: AsyncSession):
 
     # Root Task
     root = Task(
-        id=uuid4(), repo_id=repo_id, user_request="Root", status=TaskStatus.EXECUTING,
-        created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)
+        id=uuid4(),
+        repo_id=repo_id,
+        user_request="Root",
+        status=TaskStatus.EXECUTING,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     db_session.add(root)
     await db_session.flush()
 
     # Create Subtasks
-    task_a = Task(id=uuid4(), repo_id=repo_id, parent_task_id=root.id, title="A", status=TaskStatus.PENDING, user_request="A", created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc))
-    task_b = Task(id=uuid4(), repo_id=repo_id, parent_task_id=root.id, title="B", status=TaskStatus.PENDING, user_request="B", created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc))
-    task_c = Task(id=uuid4(), repo_id=repo_id, parent_task_id=root.id, title="C", status=TaskStatus.PENDING, user_request="C", created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc))
-    task_d = Task(id=uuid4(), repo_id=repo_id, parent_task_id=root.id, title="D", status=TaskStatus.PENDING, user_request="D", created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc))
+    task_a = Task(
+        id=uuid4(),
+        repo_id=repo_id,
+        parent_task_id=root.id,
+        title="A",
+        status=TaskStatus.PENDING,
+        user_request="A",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    task_b = Task(
+        id=uuid4(),
+        repo_id=repo_id,
+        parent_task_id=root.id,
+        title="B",
+        status=TaskStatus.PENDING,
+        user_request="B",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    task_c = Task(
+        id=uuid4(),
+        repo_id=repo_id,
+        parent_task_id=root.id,
+        title="C",
+        status=TaskStatus.PENDING,
+        user_request="C",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    task_d = Task(
+        id=uuid4(),
+        repo_id=repo_id,
+        parent_task_id=root.id,
+        title="D",
+        status=TaskStatus.PENDING,
+        user_request="D",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
 
     db_session.add_all([task_a, task_b, task_c, task_d])
     await db_session.flush()

@@ -36,7 +36,7 @@ if str(libs_path) not in sys.path:
 import asyncio
 import json
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import UUID
 
 import dramatiq
@@ -101,8 +101,8 @@ async def log_agent_output(
         step_number: The step in the workflow (0 for planning)
         root_task_id: If provided, also publish to root task channel for subtask logs
     """
-    from backend.app.db.models import AgentLog
     from backend.app.core.events import get_event_bus
+    from backend.app.db.models import AgentLog
 
     log_entry = AgentLog(
         task_id=task_id,
@@ -111,7 +111,7 @@ async def log_agent_output(
         ui_title=agent_output.ui_title,
         ui_subtitle=agent_output.ui_subtitle,
         technical_reasoning=agent_output.technical_reasoning,
-        tool_calls=[tc.model_dump(mode='json') for tc in agent_output.tool_calls],
+        tool_calls=[tc.model_dump(mode="json") for tc in agent_output.tool_calls],
         confidence_score=agent_output.confidence_score,
         requires_review=agent_output.requires_review,
     )
@@ -188,6 +188,7 @@ async def publish_verified_file_event(
         root_task_id: If provided, also publish to root task channel
     """
     from datetime import datetime
+
     from backend.app.core.events import get_event_bus
 
     # Use Pydantic model_dump for guaranteed schema compliance
@@ -263,12 +264,15 @@ async def log_system_error(
         step_number=-1,  # Negative to indicate system error
         ui_title="❌ System Error",
         ui_subtitle="An unexpected error occurred during task execution.",
-        technical_reasoning=json.dumps({
-            "error_type": type(error).__name__,
-            "error_message": str(error),
-            "error_context": error_context,
-            "traceback": traceback.format_exc(),
-        }, indent=2),
+        technical_reasoning=json.dumps(
+            {
+                "error_type": type(error).__name__,
+                "error_message": str(error),
+                "error_context": error_context,
+                "traceback": traceback.format_exc(),
+            },
+            indent=2,
+        ),
         tool_calls=[],
         confidence_score=0.0,
         requires_review=True,
@@ -292,9 +296,7 @@ async def _get_task(session: AsyncSession, task_id: str):
     """Get task from database by ID."""
     from backend.app.db.models import Task
 
-    result = await session.execute(
-        select(Task).where(Task.id == UUID(task_id))
-    )
+    result = await session.execute(select(Task).where(Task.id == UUID(task_id)))
     return result.scalar_one_or_none()
 
 
@@ -302,9 +304,7 @@ async def _get_repository(session: AsyncSession, repo_id: UUID):
     """Get repository from database by ID."""
     from backend.app.db.models import Repository
 
-    result = await session.execute(
-        select(Repository).where(Repository.id == repo_id)
-    )
+    result = await session.execute(select(Repository).where(Repository.id == repo_id))
     return result.scalar_one_or_none()
 
 
@@ -317,7 +317,7 @@ async def _run_planning_phase(
     session: AsyncSession,
     task,
     repo,
-    context: TaskContext,
+    context,  # TaskContext - imported locally to avoid circular imports
 ) -> tuple[bool, str | None]:
     """
     Execute the planning phase of the workflow.
@@ -328,8 +328,8 @@ async def _run_planning_phase(
     from gravity_core.agents.planner import PlannerAgent
     from gravity_core.llm import LLMClient
     from gravity_core.memory.project_map import ProjectMap
-    from gravity_core.schema import TaskContext
 
+    from backend.app.core.events import get_event_bus
     from backend.app.db.models import TaskStatus
 
     # --- Step 1: Initialize Services ---
@@ -397,7 +397,7 @@ async def _run_planning_phase(
                     "status": task.status.value,
                     "task_plan": task.task_plan,
                     "requires_review": True,
-                }
+                },
             )
         except Exception as e:
             logger.warning("plan_ready_event_failed", task_id=str(task.id), error=str(e))
@@ -422,7 +422,7 @@ async def _run_planning_phase(
                     "status": task.status.value,
                     "task_plan": task.task_plan,
                     "requires_review": False,
-                }
+                },
             )
         except Exception as e:
             logger.warning("plan_ready_event_failed", task_id=str(task.id), error=str(e))
@@ -493,15 +493,11 @@ async def _materialize_plan_to_db(
                 dependency = TaskDependency(
                     blocker_task_id=blocker_uuid,
                     blocked_task_id=child_uuid,
-                    reason="Planned Dependency"
+                    reason="Planned Dependency",
                 )
                 session.add(dependency)
             else:
-                logger.warning(
-                    "missing_dependency_ref",
-                    step=step_id,
-                    missing=blocker_key
-                )
+                logger.warning("missing_dependency_ref", step=step_id, missing=blocker_key)
 
     await session.commit()
 
@@ -509,7 +505,6 @@ async def _materialize_plan_to_db(
 # =============================================================================
 # Main Orchestration
 # =============================================================================
-
 
 
 async def _check_and_wait_if_paused(session: AsyncSession, task) -> bool:
@@ -520,8 +515,9 @@ async def _check_and_wait_if_paused(session: AsyncSession, task) -> bool:
         True if task should stop (Terminated/Deleted)
         False if task should continue
     """
-    from backend.app.db.models import TaskStatus
     import asyncio
+
+    from backend.app.db.models import TaskStatus
 
     while True:
         try:
@@ -537,13 +533,9 @@ async def _check_and_wait_if_paused(session: AsyncSession, task) -> bool:
             continue
 
         # Check for termination states
-        status_str = task.status.value if hasattr(task.status, 'value') else str(task.status)
+        status_str = task.status.value if hasattr(task.status, "value") else str(task.status)
         if status_str.upper() in ["FAILED", "COMPLETED", "ARCHIVED", "DELETED", "CANCELLED"]:
-            logger.info(
-                "worker_terminating_due_to_status",
-                task_id=str(task.id),
-                status=status_str
-            )
+            logger.info("worker_terminating_due_to_status", task_id=str(task.id), status=status_str)
             return True
 
         return False
@@ -559,9 +551,10 @@ async def _run_task_async(task_id: str) -> None:
     3. STATE CHECK - Determine if review needed
     4. EXECUTION - DAGExecutor runs the workflow
     """
+    from gravity_core.schema import TaskContext
+
     from backend.app.db.models import TaskStatus
     from backend.app.services.dag_executor import DAGExecutor
-    from gravity_core.schema import TaskContext
 
     logger.info("worker_task_started", task_id=task_id)
 
@@ -569,11 +562,7 @@ async def _run_task_async(task_id: str) -> None:
     engine = None
     try:
         engine = await _create_worker_engine()
-        session_factory = async_sessionmaker(
-            engine,
-            class_=AsyncSession,
-            expire_on_commit=False
-        )
+        session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
         async with session_factory() as session:
             task = None
@@ -619,10 +608,7 @@ async def _run_task_async(task_id: str) -> None:
 
                 # Skip planning if already executed/verified
                 if task.status == TaskStatus.EXECUTING and task.task_plan:
-                    logger.info(
-                        "skipping_planning_already_verified",
-                        task_id=task_id
-                    )
+                    logger.info("skipping_planning_already_verified", task_id=task_id)
                 else:
                     success, error = await _run_planning_phase(
                         session=session,
@@ -732,11 +718,7 @@ async def _resume_task_async(task_id: str, approved: bool) -> None:
     engine = None
     try:
         engine = await _create_worker_engine()
-        session_factory = async_sessionmaker(
-            engine,
-            class_=AsyncSession,
-            expire_on_commit=False
-        )
+        session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
         async with session_factory() as session:
             task = await _get_task(session, task_id)
@@ -767,8 +749,8 @@ async def _resume_task_async(task_id: str, approved: bool) -> None:
 @dramatiq.actor(
     max_retries=3,
     time_limit=300_000,  # 5 minute time limit per attempt
-    min_backoff=1000,    # 1 second minimum backoff
-    max_backoff=60000,   # 60 second maximum backoff
+    min_backoff=1000,  # 1 second minimum backoff
+    max_backoff=60000,  # 60 second maximum backoff
 )
 def run_task(task_id: str) -> None:
     """
@@ -783,7 +765,6 @@ def run_task(task_id: str) -> None:
         min_backoff: 1 second minimum backoff
         max_backoff: 60 seconds max between retries
     """
-    print(f"WORKER_RECEIVED_TASK: {task_id}")
     logger.info("dramatiq_actor_received", task_id=task_id)
     asyncio.run(_run_task_async(task_id))
 

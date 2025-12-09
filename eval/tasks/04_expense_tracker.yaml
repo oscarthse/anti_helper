@@ -1,0 +1,24 @@
+id: "04_expense_tracker"
+repo_id: "test_agent"
+description: |
+  Build a personal expense tracker application in the 'expense_tracker' subdirectory.
+  
+  Requirements:
+  - Create expense_tracker/ directory structure
+  - Flask web application with HTML templates
+  - SQLite database for storing expenses
+  - Features: add expense, view expenses, filter by category, monthly summary
+  - Categories: food, transport, entertainment, utilities, other
+  - Simple Bootstrap or Tailwind CSS styling
+  - Form validation for expense inputs
+  - Include requirements.txt
+  - Add README.md with setup instructions
+  - Write tests for routes and database operations
+  - Include sample data seeding script
+  
+  The app should be functional and ready to run locally.
+tags:
+  - "web"
+  - "flask"
+  - "from_scratch"
+timeout_seconds: 1200

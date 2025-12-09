@@ -24,7 +24,7 @@ class TestPlannerAgentInitialization:
 
     def test_planner_initializes_with_defaults(self):
         """Test planner initializes with default LLMClient."""
-        with patch.object(LLMClient, '__init__', return_value=None):
+        with patch.object(LLMClient, "__init__", return_value=None):
             planner = PlannerAgent()
 
             assert planner.persona == AgentPersona.PLANNER
@@ -70,41 +70,43 @@ class TestPlannerExecuteHappyPath:
         mock = MagicMock(spec=LLMClient)
 
         # Create a valid TaskPlan response
-        mock.generate_structured_output = AsyncMock(return_value=TaskPlan(
-            summary="Add input validation to user endpoint",
-            steps=[
-                TaskStep(
-                    step_id="step-1",
-                    order=1,
-                    description="Update User Pydantic schema with validation",
-                    agent_persona=AgentPersona.CODER_BE,
-                    files_affected=["backend/app/schemas/user.py"],
-                ),
-                TaskStep(
-                    step_id="step-2",
-                    order=2,
-                    description="Add validation logic to endpoint",
-                    agent_persona=AgentPersona.CODER_BE,
-                    depends_on=["step-1"],
-                    files_affected=["backend/app/api/users.py"],
-                ),
-                TaskStep(
-                    step_id="step-3",
-                    order=3,
-                    description="Add unit tests for validation",
-                    agent_persona=AgentPersona.QA,
-                    depends_on=["step-2"],
-                    files_affected=["tests/test_users.py"],
-                ),
-            ],
-            estimated_complexity=4,
-            affected_files=[
-                "backend/app/schemas/user.py",
-                "backend/app/api/users.py",
-                "tests/test_users.py",
-            ],
-            risks=["May require database migration for new constraints"],
-        ))
+        mock.generate_structured_output = AsyncMock(
+            return_value=TaskPlan(
+                summary="Add input validation to user endpoint",
+                steps=[
+                    TaskStep(
+                        step_id="step-1",
+                        order=1,
+                        description="Update User Pydantic schema with validation",
+                        agent_persona=AgentPersona.CODER_BE,
+                        files_affected=["backend/app/schemas/user.py"],
+                    ),
+                    TaskStep(
+                        step_id="step-2",
+                        order=2,
+                        description="Add validation logic to endpoint",
+                        agent_persona=AgentPersona.CODER_BE,
+                        depends_on=["step-1"],
+                        files_affected=["backend/app/api/users.py"],
+                    ),
+                    TaskStep(
+                        step_id="step-3",
+                        order=3,
+                        description="Add unit tests for validation",
+                        agent_persona=AgentPersona.QA,
+                        depends_on=["step-2"],
+                        files_affected=["tests/test_users.py"],
+                    ),
+                ],
+                estimated_complexity=4,
+                affected_files=[
+                    "backend/app/schemas/user.py",
+                    "backend/app/api/users.py",
+                    "tests/test_users.py",
+                ],
+                risks=["May require database migration for new constraints"],
+            )
+        )
 
         return mock
 
@@ -147,12 +149,15 @@ class TestPlannerExecuteHappyPath:
 
         # Mock the call_tool method to return proper ToolCall
         from gravity_core.schema import ToolCall
-        planner.call_tool = AsyncMock(return_value=ToolCall(
-            tool_name="search_codebase",
-            arguments={"pattern": "validation"},
-            success=True,
-            result="search results",
-        ))
+
+        planner.call_tool = AsyncMock(
+            return_value=ToolCall(
+                tool_name="search_codebase",
+                arguments={"pattern": "validation"},
+                success=True,
+                result="search results",
+            )
+        )
 
         result = await planner.execute(
             task_id=uuid4(),
@@ -180,12 +185,15 @@ class TestPlannerExecuteHappyPath:
         )
 
         from gravity_core.schema import ToolCall
-        planner.call_tool = AsyncMock(return_value=ToolCall(
-            tool_name="search_codebase",
-            arguments={"pattern": "validation"},
-            success=True,
-            result="",
-        ))
+
+        planner.call_tool = AsyncMock(
+            return_value=ToolCall(
+                tool_name="search_codebase",
+                arguments={"pattern": "validation"},
+                success=True,
+                result="",
+            )
+        )
 
         await planner.execute(
             task_id=uuid4(),
@@ -214,12 +222,15 @@ class TestPlannerExecuteHappyPath:
 
         # Mock tool call to return a ToolCall object
         from gravity_core.schema import ToolCall
-        planner.call_tool = AsyncMock(return_value=ToolCall(
-            tool_name="search_codebase",
-            arguments={"pattern": "user"},
-            success=True,
-            result="Found matches",
-        ))
+
+        planner.call_tool = AsyncMock(
+            return_value=ToolCall(
+                tool_name="search_codebase",
+                arguments={"pattern": "user"},
+                success=True,
+                result="Found matches",
+            )
+        )
 
         result = await planner.execute(
             task_id=uuid4(),
@@ -285,12 +296,14 @@ class TestPlannerRAGInfluence:
             llm_client=mock_llm_no_rag,
             project_map=None,  # No RAG
         )
-        planner_no_rag.call_tool = AsyncMock(return_value=ToolCall(
-            tool_name="search_codebase",
-            arguments={"pattern": "validation"},
-            success=False,
-            result="",
-        ))
+        planner_no_rag.call_tool = AsyncMock(
+            return_value=ToolCall(
+                tool_name="search_codebase",
+                arguments={"pattern": "validation"},
+                success=False,
+                result="",
+            )
+        )
 
         result_no_rag = await planner_no_rag.execute(
             task_id=uuid4(),
@@ -330,12 +343,14 @@ class TestPlannerRAGInfluence:
             llm_client=mock_llm_with_rag,
             project_map=mock_project_map,
         )
-        planner_with_rag.call_tool = AsyncMock(return_value=ToolCall(
-            tool_name="search_codebase",
-            arguments={"pattern": "validation"},
-            success=True,
-            result="Found: UserProfile class in models.py",
-        ))
+        planner_with_rag.call_tool = AsyncMock(
+            return_value=ToolCall(
+                tool_name="search_codebase",
+                arguments={"pattern": "validation"},
+                success=True,
+                result="Found: UserProfile class in models.py",
+            )
+        )
 
         result_with_rag = await planner_with_rag.execute(
             task_id=uuid4(),
@@ -395,12 +410,14 @@ class TestPlannerErrorHandling:
         )
 
         planner = PlannerAgent(llm_client=mock_client)
-        planner.call_tool = AsyncMock(return_value=ToolCall(
-            tool_name="search_codebase",
-            arguments={"pattern": "validation"},
-            success=False,
-            result="",
-        ))
+        planner.call_tool = AsyncMock(
+            return_value=ToolCall(
+                tool_name="search_codebase",
+                arguments={"pattern": "validation"},
+                success=False,
+                result="",
+            )
+        )
 
         result = await planner.execute(
             task_id=uuid4(),
@@ -422,9 +439,7 @@ class TestSearchPatternExtraction:
         """Test extraction of quoted identifiers."""
         planner = PlannerAgent()
 
-        patterns = planner._extract_search_patterns(
-            'Add validation to "UserCreate" schema'
-        )
+        patterns = planner._extract_search_patterns('Add validation to "UserCreate" schema')
 
         assert "UserCreate" in patterns
 
@@ -432,9 +447,7 @@ class TestSearchPatternExtraction:
         """Test extraction of CamelCase identifiers."""
         planner = PlannerAgent()
 
-        patterns = planner._extract_search_patterns(
-            "Update the UserRegistrationRequest model"
-        )
+        patterns = planner._extract_search_patterns("Update the UserRegistrationRequest model")
 
         assert "UserRegistrationRequest" in patterns
 
@@ -442,9 +455,7 @@ class TestSearchPatternExtraction:
         """Test extraction of snake_case identifiers."""
         planner = PlannerAgent()
 
-        patterns = planner._extract_search_patterns(
-            "Fix the validate_email function"
-        )
+        patterns = planner._extract_search_patterns("Fix the validate_email function")
 
         assert "validate_email" in patterns
 
@@ -452,9 +463,7 @@ class TestSearchPatternExtraction:
         """Test extraction of file references."""
         planner = PlannerAgent()
 
-        patterns = planner._extract_search_patterns(
-            "Update models.py with new field"
-        )
+        patterns = planner._extract_search_patterns("Update models.py with new field")
 
         assert "models.py" in patterns
 

@@ -5,7 +5,6 @@ These tools allow agents to search documentation, scrape web content,
 and verify dependency versions to prevent outdated syntax.
 """
 
-
 import httpx
 import structlog
 
@@ -21,25 +20,22 @@ logger = structlog.get_logger()
     schema={
         "type": "object",
         "properties": {
-            "query": {
-                "type": "string",
-                "description": "Search query for documentation"
-            },
+            "query": {"type": "string", "description": "Search query for documentation"},
             "library": {
                 "type": "string",
                 "description": (
                     "Optional: Specific library to search docs for (e.g., 'fastapi', 'sqlalchemy')"
-                )
+                ),
             },
             "max_results": {
                 "type": "integer",
                 "description": "Maximum number of results to return",
-                "default": 5
-            }
+                "default": 5,
+            },
         },
-        "required": ["query"]
+        "required": ["query"],
     },
-    category="knowledge"
+    category="knowledge",
 )
 async def web_search_docs(
     query: str,
@@ -74,19 +70,16 @@ async def web_search_docs(
     schema={
         "type": "object",
         "properties": {
-            "url": {
-                "type": "string",
-                "description": "URL to scrape content from"
-            },
+            "url": {"type": "string", "description": "URL to scrape content from"},
             "max_length": {
                 "type": "integer",
                 "description": "Maximum content length in characters",
-                "default": 10000
-            }
+                "default": 10000,
+            },
         },
-        "required": ["url"]
+        "required": ["url"],
     },
-    category="knowledge"
+    category="knowledge",
 )
 async def scrape_web_content(
     url: str,
@@ -113,13 +106,14 @@ async def scrape_web_content(
             # Basic HTML stripping - would use beautifulsoup or trafilatura
             # for production quality extraction
             import re
+
             # Remove script and style tags
-            content = re.sub(r'<script[^>]*>.*?</script>', '', content, flags=re.DOTALL)
-            content = re.sub(r'<style[^>]*>.*?</style>', '', content, flags=re.DOTALL)
+            content = re.sub(r"<script[^>]*>.*?</script>", "", content, flags=re.DOTALL)
+            content = re.sub(r"<style[^>]*>.*?</style>", "", content, flags=re.DOTALL)
             # Remove HTML tags
-            content = re.sub(r'<[^>]+>', ' ', content)
+            content = re.sub(r"<[^>]+>", " ", content)
             # Clean whitespace
-            content = re.sub(r'\s+', ' ', content).strip()
+            content = re.sub(r"\s+", " ", content).strip()
 
             # Truncate to max length
             if len(content) > max_length:
@@ -149,17 +143,17 @@ async def scrape_web_content(
         "properties": {
             "package": {
                 "type": "string",
-                "description": "Package name (e.g., 'fastapi', 'pydantic')"
+                "description": "Package name (e.g., 'fastapi', 'pydantic')",
             },
             "check_pypi": {
                 "type": "boolean",
                 "description": "Also check latest version on PyPI",
-                "default": True
-            }
+                "default": True,
+            },
         },
-        "required": ["package"]
+        "required": ["package"],
     },
-    category="knowledge"
+    category="knowledge",
 )
 async def check_dependency_version(
     package: str,
@@ -179,6 +173,7 @@ async def check_dependency_version(
     # Check installed version
     try:
         import importlib.metadata
+
         result["installed_version"] = importlib.metadata.version(package)
     except importlib.metadata.PackageNotFoundError:
         pass
@@ -187,9 +182,7 @@ async def check_dependency_version(
     if check_pypi:
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    f"https://pypi.org/pypi/{package}/json"
-                )
+                response = await client.get(f"https://pypi.org/pypi/{package}/json")
                 if response.status_code == 200:
                     data = response.json()
                     result["latest_version"] = data["info"]["version"]

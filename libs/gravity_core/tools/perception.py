@@ -10,9 +10,74 @@ from pathlib import Path
 
 import structlog
 
+from gravity_core.tools.policies import get_current_policy
 from gravity_core.tools.registry import tool
 
 logger = structlog.get_logger()
+
+
+@tool(
+    name="read_file",
+    description="Read the contents of a specific file. "
+    "MANDATORY: You must read a file before you can edit it.",
+    schema={
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute path to the file"},
+            "start_line": {
+                "type": "integer",
+                "description": "Start line (1-indexed), optional",
+                "default": 1,
+            },
+            "end_line": {"type": "integer", "description": "End line (1-indexed), optional"},
+        },
+        "required": ["path"],
+    },
+    category="perception",
+)
+async def read_file(
+    path: str,
+    start_line: int = 1,
+    end_line: int | None = None,
+) -> dict:
+    """
+    Read file content and record access for policy enforcement.
+    """
+    logger.info("read_file", path=path, start=start_line, end=end_line)
+
+    file_path = Path(path)
+    if not file_path.exists():
+        return {"error": f"File does not exist: {path}"}
+
+    try:
+        content = file_path.read_text(encoding="utf-8")
+
+        # Record the read for policy enforcement
+        policy = get_current_policy()
+        if policy:
+            policy.record_read(path)
+
+        lines = content.splitlines()
+        total_lines = len(lines)
+
+        # Handle line slicing
+        start_idx = max(0, start_line - 1)
+        if end_line:
+            end_idx = min(total_lines, end_line)
+            selected_lines = lines[start_idx:end_idx]
+        else:
+            selected_lines = lines[start_idx:]
+
+        return {
+            "path": path,
+            "content": "\n".join(selected_lines),
+            "total_lines": total_lines,
+            "lines_shown": f"{start_line}-{end_line if end_line else total_lines}",
+        }
+
+    except Exception as e:
+        logger.error("read_file_error", path=path, error=str(e))
+        return {"error": f"Failed to read file: {e}"}
 
 
 @tool(
@@ -22,14 +87,11 @@ logger = structlog.get_logger()
     schema={
         "type": "object",
         "properties": {
-            "path": {
-                "type": "string",
-                "description": "Root path to scan"
-            },
+            "path": {"type": "string", "description": "Root path to scan"},
             "max_depth": {
                 "type": "integer",
                 "description": "Maximum directory depth to scan",
-                "default": 4
+                "default": 4,
             },
             "exclude_patterns": {
                 "type": "array",
@@ -37,12 +99,19 @@ logger = structlog.get_logger()
                 "description": (
                     "Patterns to exclude (e.g., ['.git', 'node_modules', '__pycache__'])"
                 ),
-                "default": [".git", "node_modules", "__pycache__", ".venv", "venv", ".pytest_cache"]
-            }
+                "default": [
+                    ".git",
+                    "node_modules",
+                    "__pycache__",
+                    ".venv",
+                    "venv",
+                    ".pytest_cache",
+                ],
+            },
         },
-        "required": ["path"]
+        "required": ["path"],
     },
-    category="perception"
+    category="perception",
 )
 async def scan_repo_structure(
     path: str,
@@ -82,21 +151,25 @@ async def scan_repo_structure(
 
                 if item.is_file():
                     file_count += 1
-                    items.append({
-                        "type": "file",
-                        "name": item.name,
-                        "path": str(item.relative_to(root)),
-                        "size": item.stat().st_size,
-                    })
+                    items.append(
+                        {
+                            "type": "file",
+                            "name": item.name,
+                            "path": str(item.relative_to(root)),
+                            "size": item.stat().st_size,
+                        }
+                    )
                 elif item.is_dir():
                     dir_count += 1
                     children = _scan_dir(item, depth + 1)
-                    items.append({
-                        "type": "directory",
-                        "name": item.name,
-                        "path": str(item.relative_to(root)),
-                        "children": children,
-                    })
+                    items.append(
+                        {
+                            "type": "directory",
+                            "name": item.name,
+                            "path": str(item.relative_to(root)),
+                            "children": children,
+                        }
+                    )
         except PermissionError:
             pass
 
@@ -110,7 +183,7 @@ async def scan_repo_structure(
         "summary": {
             "files": file_count,
             "directories": dir_count,
-        }
+        },
     }
 
 
@@ -121,33 +194,27 @@ async def scan_repo_structure(
     schema={
         "type": "object",
         "properties": {
-            "path": {
-                "type": "string",
-                "description": "Root path to search in"
-            },
-            "pattern": {
-                "type": "string",
-                "description": "Search pattern (supports regex)"
-            },
+            "path": {"type": "string", "description": "Root path to search in"},
+            "pattern": {"type": "string", "description": "Search pattern (supports regex)"},
             "file_pattern": {
                 "type": "string",
                 "description": "Glob pattern for files to search (e.g., '*.py')",
-                "default": "*"
+                "default": "*",
             },
             "max_results": {
                 "type": "integer",
                 "description": "Maximum number of results",
-                "default": 50
+                "default": 50,
             },
             "context_lines": {
                 "type": "integer",
                 "description": "Number of context lines around matches",
-                "default": 2
-            }
+                "default": 2,
+            },
         },
-        "required": ["path", "pattern"]
+        "required": ["path", "pattern"],
     },
-    category="perception"
+    category="perception",
 )
 async def search_codebase(
     path: str,
@@ -155,10 +222,15 @@ async def search_codebase(
     file_pattern: str = "*",
     max_results: int = 50,
     context_lines: int = 2,
+    **kwargs,  # Accept extra params from LLM hallucinations
 ) -> dict:
     """
     Search codebase for pattern matches.
     """
+    # Handle LLM hallucinations like "file_type" instead of "file_pattern"
+    if "file_type" in kwargs and file_pattern == "*":
+        file_pattern = kwargs.pop("file_type")
+
     logger.info("search_codebase", path=path, pattern=pattern)
 
     import re
@@ -181,14 +253,16 @@ async def search_codebase(
             continue
 
         # Skip common non-code directories
-        if any(part.startswith('.') or part in ['node_modules', '__pycache__', 'venv', '.venv']
-               for part in file_path.parts):
+        if any(
+            part.startswith(".") or part in ["node_modules", "__pycache__", "venv", ".venv"]
+            for part in file_path.parts
+        ):
             continue
 
         files_searched += 1
 
         try:
-            content = file_path.read_text(encoding='utf-8', errors='ignore')
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
             lines = content.splitlines()
 
             for i, line in enumerate(lines):
@@ -198,12 +272,14 @@ async def search_codebase(
                     end = min(len(lines), i + context_lines + 1)
                     context = lines[start:end]
 
-                    matches.append({
-                        "file": str(file_path.relative_to(root)),
-                        "line_number": i + 1,
-                        "line": line.strip(),
-                        "context": "\n".join(context),
-                    })
+                    matches.append(
+                        {
+                            "file": str(file_path.relative_to(root)),
+                            "line_number": i + 1,
+                            "line": line.strip(),
+                            "context": "\n".join(context),
+                        }
+                    )
 
                     if len(matches) >= max_results:
                         return {
@@ -228,19 +304,16 @@ async def search_codebase(
     schema={
         "type": "object",
         "properties": {
-            "path": {
-                "type": "string",
-                "description": "Path to the file to analyze"
-            },
+            "path": {"type": "string", "description": "Path to the file to analyze"},
             "include_docstrings": {
                 "type": "boolean",
                 "description": "Include docstrings in output",
-                "default": True
-            }
+                "default": True,
+            },
         },
-        "required": ["path"]
+        "required": ["path"],
     },
-    category="perception"
+    category="perception",
 )
 async def get_file_signatures(
     path: str,
@@ -300,9 +373,7 @@ def _extract_class_signature(
             bases.append(base.id)
         elif isinstance(base, ast.Attribute):
             bases.append(
-                f"{base.value.id}.{base.attr}"
-                if isinstance(base.value, ast.Name)
-                else base.attr
+                f"{base.value.id}.{base.attr}" if isinstance(base.value, ast.Name) else base.attr
             )
 
     # Get method signatures

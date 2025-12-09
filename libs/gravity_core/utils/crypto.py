@@ -20,16 +20,19 @@ logger = structlog.get_logger(__name__)
 
 class CryptoError(Exception):
     """Base exception for cryptographic operations."""
+
     pass
 
 
 class KeyNotConfiguredError(CryptoError):
     """Raised when the encryption key is not configured."""
+
     pass
 
 
 class DecryptionError(CryptoError):
     """Raised when decryption fails (invalid key or corrupted data)."""
+
     pass
 
 

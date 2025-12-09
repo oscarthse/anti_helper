@@ -1,0 +1,13 @@
+id: "01_streamlit_multi_page_app"
+repo_id: "streamlit_example_repo"
+description: |
+  Develop a multi-page Streamlit app for analyzing and explaining Apple stock data.
+  Requirements:
+    - Use multiple pages via Streamlit's pages mechanism
+    - Include a data loader utility
+    - Include at least 3 pages: Overview, Analysis, Explanation
+tags:
+  - "frontend"
+  - "feature"
+  - "multi_file"
+timeout_seconds: 900

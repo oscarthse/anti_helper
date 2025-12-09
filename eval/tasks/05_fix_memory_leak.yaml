@@ -1,0 +1,14 @@
+id: "05_fix_memory_leak"
+repo_id: "backend_example_repo"
+description: |
+  Fix memory leak in background worker process.
+  Requirements:
+    - Identify and fix resource leaks (unclosed connections, file handles)
+    - Add proper cleanup in finally blocks
+    - Ensure async context managers are used correctly
+    - Add tests to verify resource cleanup
+tags:
+  - "backend"
+  - "bugfix"
+  - "performance"
+timeout_seconds: 900

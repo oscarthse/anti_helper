@@ -7,7 +7,7 @@ and ORM operations.
 
 # Add project paths
 # Add project paths
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -33,8 +33,8 @@ class TestDatabaseSession:
             id=uuid4(),
             name="test-repo",
             path="/tmp/test",
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         db_session.add(repo)
         await db_session.flush()
@@ -64,19 +64,19 @@ class TestRepositoryModel:
     async def test_repository_timestamps(self, db_session):
         """Test that timestamps are set correctly."""
 
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
 
         repo = Repository(
             id=uuid4(),
             name="timestamp-test",
             path="/tmp/timestamp",
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         db_session.add(repo)
         await db_session.flush()
 
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         assert before <= repo.created_at <= after
         assert before <= repo.updated_at <= after
@@ -103,8 +103,8 @@ class TestTaskModel:
             status=TaskStatus.PENDING,
             current_step=0,
             retry_count=0,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         db_session.add(task)
         await db_session.flush()
@@ -128,8 +128,8 @@ class TestTaskModel:
             status=TaskStatus.PENDING,
             current_step=0,
             retry_count=0,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         db_session.add(task)
         await db_session.flush()
@@ -144,7 +144,7 @@ class TestTaskModel:
         assert task.status == TaskStatus.EXECUTING
 
         task.status = TaskStatus.COMPLETED
-        task.completed_at = datetime.now(timezone.utc)
+        task.completed_at = datetime.now(UTC)
         await db_session.flush()
         assert task.status == TaskStatus.COMPLETED
         assert task.completed_at is not None
@@ -169,8 +169,8 @@ class TestAgentLogModel:
             status=TaskStatus.PLANNING,
             current_step=0,
             retry_count=0,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         db_session.add(task)
         await db_session.flush()
@@ -186,7 +186,7 @@ class TestAgentLogModel:
             technical_reasoning="Parsing user request for intent.",
             confidence_score=0.9,
             requires_review=False,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         db_session.add(log)
         await db_session.flush()
@@ -210,8 +210,8 @@ class TestAgentLogModel:
             status=TaskStatus.PLANNING,
             current_step=0,
             retry_count=0,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         db_session.add(task)
         await db_session.flush()
@@ -240,7 +240,7 @@ class TestAgentLogModel:
             tool_calls=tool_calls,
             confidence_score=0.85,
             requires_review=False,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         db_session.add(log)
         await db_session.flush()
@@ -258,7 +258,6 @@ class TestDatabaseConstraints:
         """Test that task requires existing repository."""
         from sqlalchemy.exc import IntegrityError
 
-
         task = Task(
             id=uuid4(),
             repo_id=uuid4(),  # Non-existent repo
@@ -266,8 +265,8 @@ class TestDatabaseConstraints:
             status=TaskStatus.PENDING,
             current_step=0,
             retry_count=0,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         db_session.add(task)
 

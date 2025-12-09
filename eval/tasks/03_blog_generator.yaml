@@ -1,0 +1,24 @@
+id: "03_blog_generator"
+repo_id: "test_agent"
+description: |
+  Create a static blog generator in the 'blog_generator' subdirectory.
+  
+  Requirements:
+  - Create blog_generator/ directory with proper structure
+  - Python script that converts Markdown files to HTML
+  - Support for front matter (title, date, author)
+  - Generate index page listing all posts
+  - Use Jinja2 templates for HTML generation
+  - Include CSS styling (simple but clean)
+  - Command to build site: python build.py
+  - Include 2-3 sample blog posts in markdown/
+  - Add requirements.txt
+  - Write README.md with usage instructions
+  - Include tests for markdown parsing and HTML generation
+  
+  The generator should produce a working static site.
+tags:
+  - "python"
+  - "generator"
+  - "from_scratch"
+timeout_seconds: 1200

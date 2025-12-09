@@ -25,10 +25,7 @@ class TestHealthEndpoints:
     @pytest.mark.asyncio
     async def test_root_endpoint(self):
         """Test the root endpoint returns health status."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/")
 
         assert response.status_code == 200
@@ -39,10 +36,7 @@ class TestHealthEndpoints:
     @pytest.mark.asyncio
     async def test_health_endpoint(self):
         """Test the health endpoint."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/health")
 
         assert response.status_code == 200
@@ -55,6 +49,7 @@ class TestRepositoryEndpoints:
     @pytest.fixture
     def mock_db_session(self, db_session, mocker):
         """Override the database session for testing."""
+
         async def override_get_session():
             yield db_session
 
@@ -65,10 +60,7 @@ class TestRepositoryEndpoints:
     @pytest.mark.asyncio
     async def test_list_repos_empty(self, mock_db_session):
         """Test listing repos when none exist."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/api/repos/")
 
         assert response.status_code == 200
@@ -77,10 +69,7 @@ class TestRepositoryEndpoints:
     @pytest.mark.asyncio
     async def test_create_repo_invalid_path(self, mock_db_session):
         """Test creating a repo with invalid path."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/api/repos/",
                 json={
@@ -95,10 +84,7 @@ class TestRepositoryEndpoints:
     @pytest.mark.asyncio
     async def test_get_repo_not_found(self, mock_db_session):
         """Test getting a non-existent repo."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get(f"/api/repos/{uuid4()}")
 
         assert response.status_code == 404
@@ -111,13 +97,16 @@ class TestTaskEndpoints:
     def mock_broker(self):
         """Mock Dramatiq broker/actor for all tests in this class."""
         # Patching run_task.send where it is defined
-        with patch("backend.app.workers.agent_runner.run_task.send") as mock_run, \
-             patch("backend.app.workers.agent_runner.resume_task.send") as mock_resume:
+        with (
+            patch("backend.app.workers.agent_runner.run_task.send") as mock_run,
+            patch("backend.app.workers.agent_runner.resume_task.send") as mock_resume,
+        ):
             yield {"run": mock_run, "resume": mock_resume}
 
     @pytest.fixture
     def mock_db_session(self, db_session, mocker):
         """Override the database session for testing."""
+
         async def override_get_session():
             yield db_session
 
@@ -128,10 +117,7 @@ class TestTaskEndpoints:
     @pytest.mark.asyncio
     async def test_list_tasks_empty(self, mock_db_session):
         """Test listing tasks when none exist."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/api/tasks/")
 
         assert response.status_code == 200
@@ -140,10 +126,7 @@ class TestTaskEndpoints:
     @pytest.mark.asyncio
     async def test_create_task_repo_not_found(self, mock_db_session):
         """Test creating a task with non-existent repo."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/api/tasks/",
                 json={
@@ -158,10 +141,7 @@ class TestTaskEndpoints:
     @pytest.mark.asyncio
     async def test_create_task_request_too_short(self, mock_db_session):
         """Test that short requests are rejected."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/api/tasks/",
                 json={
@@ -175,10 +155,7 @@ class TestTaskEndpoints:
     @pytest.mark.asyncio
     async def test_get_task_not_found(self, mock_db_session):
         """Test getting a non-existent task."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get(f"/api/tasks/{uuid4()}")
 
         assert response.status_code == 404
@@ -186,10 +163,7 @@ class TestTaskEndpoints:
     @pytest.mark.asyncio
     async def test_cancel_task_not_found(self, mock_db_session):
         """Test cancelling a non-existent task."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(f"/api/tasks/{uuid4()}/cancel")
 
         assert response.status_code == 404
@@ -201,8 +175,10 @@ class TestTaskWithRepository:
     @pytest.fixture(autouse=True)
     def mock_broker(self):
         """Mock Dramatiq broker for all tests in this class."""
-        with patch("backend.app.workers.agent_runner.run_task.send") as mock_run, \
-             patch("backend.app.workers.agent_runner.resume_task.send") as mock_resume:
+        with (
+            patch("backend.app.workers.agent_runner.run_task.send") as mock_run,
+            patch("backend.app.workers.agent_runner.resume_task.send") as mock_resume,
+        ):
             yield {"run": mock_run, "resume": mock_resume}
 
     @pytest_asyncio.fixture
@@ -250,10 +226,7 @@ class TestTaskWithRepository:
         """Test getting an existing task."""
         task = repo_with_task["task"]
 
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get(f"/api/tasks/{task.id}")
 
         assert response.status_code == 200
@@ -261,10 +234,7 @@ class TestTaskWithRepository:
         assert data["id"] == str(task.id)
         assert data["status"] == "pending"
 
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(f"/api/tasks/{task.id}/execute")
 
         assert response.status_code == 200
@@ -275,10 +245,7 @@ class TestTaskWithRepository:
         """Test cancelling a pending task."""
         task = repo_with_task["task"]
 
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(f"/api/tasks/{task.id}/cancel")
 
         assert response.status_code == 200

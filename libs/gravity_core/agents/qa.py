@@ -140,7 +140,7 @@ class QAAgent(BaseAgent):
     def __init__(
         self,
         llm_client: LLMClient | None = None,
-        model_name: str = "gpt-4o",
+        model_name: str | None = None,
         max_fix_attempts: int = 3,
         **kwargs: Any,
     ) -> None:
@@ -149,12 +149,20 @@ class QAAgent(BaseAgent):
 
         Args:
             llm_client: LLMClient instance (created if not provided)
-            model_name: LLM model to use
+            model_name: LLM model to use (defaults to role config)
             max_fix_attempts: Maximum auto-fix attempts before giving up
         """
         super().__init__(**kwargs)
 
-        self.model_name = model_name
+        self.persona = AgentPersona.QA
+
+        # Get role-specific LLM configuration
+        from gravity_core.llm.settings import get_config
+
+        config = get_config(self.persona)
+
+        self.model_name = model_name or config.model_name
+        self.temperature = config.temperature
         self.llm_client = llm_client or LLMClient()
         self.max_fix_attempts = max_fix_attempts
         self._execution_runs: list[ExecutionRun] = []
@@ -162,7 +170,8 @@ class QAAgent(BaseAgent):
 
         logger.info(
             "qa_initialized",
-            model=model_name,
+            model=self.model_name,
+            temperature=self.temperature,
             max_fix_attempts=max_fix_attempts,
         )
 
@@ -424,7 +433,8 @@ Focus on the actual error, not workarounds."""
             if "collected" in stdout.lower():
                 # Extract number of tests collected
                 import re
-                match = re.search(r'collected (\d+) item', stdout.lower())
+
+                match = re.search(r"collected (\d+) item", stdout.lower())
                 if match:
                     tests_collected = int(match.group(1))
                     if tests_collected > 0:
@@ -438,36 +448,42 @@ Focus on the actual error, not workarounds."""
             return self.build_output(
                 ui_title="⚠️ No Tests Executed",
                 ui_subtitle="Commands exited successfully but no tests were actually run.",
-                technical_reasoning=json.dumps({
-                    "status": "no_tests_found",
-                    "warning": "No test files or test functions were found/executed.",
-                    "runs": [
-                        {
-                            "command": run.command,
-                            "exit_code": run.exit_code,
-                            "stdout_preview": (run.stdout or "")[:200],
-                        }
-                        for run in self._execution_runs
-                    ],
-                }, indent=2),
+                technical_reasoning=json.dumps(
+                    {
+                        "status": "no_tests_found",
+                        "warning": "No test files or test functions were found/executed.",
+                        "runs": [
+                            {
+                                "command": run.command,
+                                "exit_code": run.exit_code,
+                                "stdout_preview": (run.stdout or "")[:200],
+                            }
+                            for run in self._execution_runs
+                        ],
+                    },
+                    indent=2,
+                ),
                 confidence_score=0.7,  # Lower confidence since we didn't verify anything
             )
 
         return self.build_output(
             ui_title="✅ All Tests Passed",
             ui_subtitle=f"All {total} test command(s) passed ({tests_collected} tests). The changes work as expected.",
-            technical_reasoning=json.dumps({
-                "status": "success",
-                "tests_collected": tests_collected,
-                "runs": [
-                    {
-                        "command": run.command,
-                        "exit_code": run.exit_code,
-                        "duration_ms": run.duration_ms,
-                    }
-                    for run in self._execution_runs
-                ],
-            }, indent=2),
+            technical_reasoning=json.dumps(
+                {
+                    "status": "success",
+                    "tests_collected": tests_collected,
+                    "runs": [
+                        {
+                            "command": run.command,
+                            "exit_code": run.exit_code,
+                            "duration_ms": run.duration_ms,
+                        }
+                        for run in self._execution_runs
+                    ],
+                },
+                indent=2,
+            ),
             confidence_score=0.95,
         )
 
@@ -483,16 +499,19 @@ Focus on the actual error, not workarounds."""
                 f"Test `{failed_run.command}` failed. "
                 "I've diagnosed the issue and generated a fix."
             ),
-            technical_reasoning=json.dumps({
-                "status": "failed_with_fix",
-                "failed_command": failed_run.command,
-                "exit_code": failed_run.exit_code,
-                "error_summary": self._extract_error_summary(failed_run),
-                "suggested_fix": {
-                    "tool_name": fix.tool_name,
-                    "arguments": fix.arguments,
+            technical_reasoning=json.dumps(
+                {
+                    "status": "failed_with_fix",
+                    "failed_command": failed_run.command,
+                    "exit_code": failed_run.exit_code,
+                    "error_summary": self._extract_error_summary(failed_run),
+                    "suggested_fix": {
+                        "tool_name": fix.tool_name,
+                        "arguments": fix.arguments,
+                    },
                 },
-            }, indent=2),
+                indent=2,
+            ),
             confidence_score=0.6,  # Moderate confidence (fix needs verification)
             tool_calls=[fix],  # Include the fix as a tool call
         )
@@ -508,14 +527,17 @@ Focus on the actual error, not workarounds."""
                 f"Test `{failed_run.command}` failed. "
                 "Unable to automatically diagnose the root cause."
             ),
-            technical_reasoning=json.dumps({
-                "status": "failed_no_fix",
-                "failed_command": failed_run.command,
-                "exit_code": failed_run.exit_code,
-                "stdout": failed_run.stdout[:2000] if failed_run.stdout else "",
-                "stderr": failed_run.stderr[:2000] if failed_run.stderr else "",
-                "error_summary": self._extract_error_summary(failed_run),
-            }, indent=2),
+            technical_reasoning=json.dumps(
+                {
+                    "status": "failed_no_fix",
+                    "failed_command": failed_run.command,
+                    "exit_code": failed_run.exit_code,
+                    "stdout": failed_run.stdout[:2000] if failed_run.stdout else "",
+                    "stderr": failed_run.stderr[:2000] if failed_run.stderr else "",
+                    "error_summary": self._extract_error_summary(failed_run),
+                },
+                indent=2,
+            ),
             confidence_score=0.2,  # Low confidence - needs human review
         )
 

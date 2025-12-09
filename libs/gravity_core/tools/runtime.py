@@ -31,33 +31,30 @@ SANDBOX_CONFIG = {
     schema={
         "type": "object",
         "properties": {
-            "command": {
-                "type": "string",
-                "description": "Shell command to execute"
-            },
+            "command": {"type": "string", "description": "Shell command to execute"},
             "working_directory": {
                 "type": "string",
                 "description": "Working directory for the command",
-                "default": "/sandbox/project"
+                "default": "/sandbox/project",
             },
             "timeout_seconds": {
                 "type": "integer",
                 "description": "Maximum execution time in seconds",
-                "default": 60
+                "default": 60,
             },
             "env": {
                 "type": "object",
                 "description": "Additional environment variables",
-                "default": {}
+                "default": {},
             },
             "repo_path": {
                 "type": "string",
-                "description": "Host path to repository to mount into container"
-            }
+                "description": "Host path to repository to mount into container",
+            },
         },
-        "required": ["command"]
+        "required": ["command"],
     },
-    category="runtime"
+    category="runtime",
 )
 async def run_shell_command(
     command: str,
@@ -116,7 +113,7 @@ async def run_shell_command(
         # Build volume mount if repo_path provided
         volumes = {}
         if repo_path:
-            volumes[repo_path] = {'bind': '/sandbox/project', 'mode': 'rw'}
+            volumes[repo_path] = {"bind": "/sandbox/project", "mode": "rw"}
             logger.info("sandbox_volume_mount", host=repo_path, container="/sandbox/project")
 
         # Run container
@@ -163,6 +160,7 @@ async def run_shell_command(
     except ImportError:
         # Docker not available - run locally ONLY if explicitly allowed
         import os
+
         if os.environ.get("UNSAFE_LOCAL_FALLBACK", "").lower() == "true":
             logger.warning("docker_not_available_fallback_enabled", running="locally")
             return await _run_locally(command, timeout_seconds)
@@ -219,19 +217,16 @@ async def _run_locally(command: str, timeout: int) -> dict:
     schema={
         "type": "object",
         "properties": {
-            "container_id": {
-                "type": "string",
-                "description": "Container ID from previous run"
-            },
+            "container_id": {"type": "string", "description": "Container ID from previous run"},
             "tail": {
                 "type": "integer",
                 "description": "Number of lines from the end to return",
-                "default": 100
-            }
+                "default": 100,
+            },
         },
-        "required": ["container_id"]
+        "required": ["container_id"],
     },
-    category="runtime"
+    category="runtime",
 )
 async def read_sandbox_logs(
     container_id: str,
@@ -272,18 +267,12 @@ async def read_sandbox_logs(
     schema={
         "type": "object",
         "properties": {
-            "database_url": {
-                "type": "string",
-                "description": "Database connection URL"
-            },
-            "table_name": {
-                "type": "string",
-                "description": "Specific table to inspect (optional)"
-            }
+            "database_url": {"type": "string", "description": "Database connection URL"},
+            "table_name": {"type": "string", "description": "Specific table to inspect (optional)"},
         },
-        "required": ["database_url"]
+        "required": ["database_url"],
     },
-    category="runtime"
+    category="runtime",
 )
 async def inspect_db_schema(
     database_url: str,

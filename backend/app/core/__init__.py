@@ -4,10 +4,10 @@ from backend.app.core.events import (
     Event,
     RedisEventBus,
     get_event_bus,
+    global_channel,
     init_event_bus,
     shutdown_event_bus,
     task_channel,
-    global_channel,
 )
 
 __all__ = [

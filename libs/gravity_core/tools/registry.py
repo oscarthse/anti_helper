@@ -103,7 +103,7 @@ class ToolRegistry:
 
             prop = {"type": schema_type}
             if schema_type == "array":
-                prop["items"] = {"type": "string"} # Default to string items for simplicity
+                prop["items"] = {"type": "string"}  # Default to string items for simplicity
 
             properties[name] = prop
 
@@ -157,14 +157,16 @@ class ToolRegistry:
         for name, schema in cls._schemas.items():
             if tool_names and name not in tool_names:
                 continue
-            tools.append({
-                "type": "function",
-                "function": {
-                    "name": schema["name"],
-                    "description": schema["description"],
-                    "parameters": schema["parameters"],
-                },
-            })
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": schema["name"],
+                        "description": schema["description"],
+                        "parameters": schema["parameters"],
+                    },
+                }
+            )
         return tools
 
     @classmethod
@@ -236,6 +238,7 @@ def tool(
         async def read_file(path: str) -> str:
             ...
     """
+
     def decorator(func: Callable) -> Callable:
         tool_name = name or func.__name__
         ToolRegistry.register(
@@ -246,4 +249,5 @@ def tool(
             category=category,
         )
         return func
+
     return decorator

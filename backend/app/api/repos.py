@@ -80,9 +80,7 @@ async def register_repository(
     logger.info("registering_repository", path=repo_in.path)
 
     # Check if path already registered
-    existing = await session.execute(
-        select(Repository).where(Repository.path == repo_in.path)
-    )
+    existing = await session.execute(select(Repository).where(Repository.path == repo_in.path))
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -91,6 +89,7 @@ async def register_repository(
 
     # Verify path exists
     from pathlib import Path
+
     if not Path(repo_in.path).exists():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -119,9 +118,7 @@ async def list_repositories(
 ) -> list[Repository]:
     """List all registered repositories."""
 
-    result = await session.execute(
-        select(Repository).order_by(Repository.name)
-    )
+    result = await session.execute(select(Repository).order_by(Repository.name))
     return list(result.scalars().all())
 
 
@@ -132,9 +129,7 @@ async def get_repository(
 ) -> Repository:
     """Get a repository by ID."""
 
-    result = await session.execute(
-        select(Repository).where(Repository.id == repo_id)
-    )
+    result = await session.execute(select(Repository).where(Repository.id == repo_id))
     repo = result.scalar_one_or_none()
 
     if not repo:
@@ -156,9 +151,7 @@ async def scan_repository(
 
     This uses the ProjectMap to analyze the codebase structure.
     """
-    result = await session.execute(
-        select(Repository).where(Repository.id == repo_id)
-    )
+    result = await session.execute(select(Repository).where(Repository.id == repo_id))
     repo = result.scalar_one_or_none()
 
     if not repo:
@@ -203,9 +196,7 @@ async def delete_repository(
     This removes the repository from the system but does not
     delete any files on disk.
     """
-    result = await session.execute(
-        select(Repository).where(Repository.id == repo_id)
-    )
+    result = await session.execute(select(Repository).where(Repository.id == repo_id))
     repo = result.scalar_one_or_none()
 
     if not repo:

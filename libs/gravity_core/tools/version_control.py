@@ -22,33 +22,27 @@ logger = structlog.get_logger()
     schema={
         "type": "object",
         "properties": {
-            "path": {
-                "type": "string",
-                "description": "Repository path"
-            },
-            "message": {
-                "type": "string",
-                "description": "Commit message (will be formatted)"
-            },
+            "path": {"type": "string", "description": "Repository path"},
+            "message": {"type": "string", "description": "Commit message (will be formatted)"},
             "type": {
                 "type": "string",
                 "description": "Commit type: feat, fix, refactor, docs, test, chore",
                 "enum": ["feat", "fix", "refactor", "docs", "test", "chore"],
-                "default": "feat"
+                "default": "feat",
             },
             "scope": {
                 "type": "string",
-                "description": "Optional scope (e.g., 'api', 'ui', 'core')"
+                "description": "Optional scope (e.g., 'api', 'ui', 'core')",
             },
             "stage_all": {
                 "type": "boolean",
                 "description": "Stage all changes before committing",
-                "default": False
-            }
+                "default": False,
+            },
         },
-        "required": ["path", "message"]
+        "required": ["path", "message"],
     },
-    category="version_control"
+    category="version_control",
 )
 async def git_commit_changes(
     path: str,
@@ -143,23 +137,17 @@ async def git_commit_changes(
     schema={
         "type": "object",
         "properties": {
-            "path": {
-                "type": "string",
-                "description": "Repository path"
-            },
-            "file_path": {
-                "type": "string",
-                "description": "Specific file to diff (optional)"
-            },
+            "path": {"type": "string", "description": "Repository path"},
+            "file_path": {"type": "string", "description": "Specific file to diff (optional)"},
             "context_lines": {
                 "type": "integer",
                 "description": "Lines of context around changes",
-                "default": 3
-            }
+                "default": 3,
+            },
         },
-        "required": ["path"]
+        "required": ["path"],
     },
-    category="version_control"
+    category="version_control",
 )
 async def git_diff_staged(
     path: str,

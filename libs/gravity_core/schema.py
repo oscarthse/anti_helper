@@ -6,7 +6,7 @@ Every agent action must be logged with a clear, user-facing explanation,
 adhering to the Explainability First mandate.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
@@ -45,25 +45,14 @@ class ToolCall(BaseModel):
     id: UUID = Field(default_factory=uuid4, description="Unique identifier for this tool call")
     tool_name: str = Field(description="Name of the tool being called")
     arguments: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Arguments passed to the tool"
+        default_factory=dict, description="Arguments passed to the tool"
     )
     result: str | None = Field(
-        default=None,
-        description="Result returned by the tool (populated after execution)"
+        default=None, description="Result returned by the tool (populated after execution)"
     )
-    success: bool = Field(
-        default=True,
-        description="Whether the tool execution succeeded"
-    )
-    error: str | None = Field(
-        default=None,
-        description="Error message if the tool failed"
-    )
-    duration_ms: int | None = Field(
-        default=None,
-        description="Execution time in milliseconds"
-    )
+    success: bool = Field(default=True, description="Whether the tool execution succeeded")
+    error: str | None = Field(default=None, description="Error message if the tool failed")
+    duration_ms: int | None = Field(default=None, description="Execution time in milliseconds")
 
 
 # =============================================================================
@@ -78,6 +67,7 @@ class ToolResult(BaseModel):
     Ensures every tool returns a verified success status and structured data,
     never just a loose dictionary.
     """
+
     success: bool = Field(description="Whether the tool operation succeeded")
     error: str | None = Field(default=None, description="Error message if failed")
     data: dict[str, Any] | None = Field(default=None, description="Structured result data")
@@ -92,11 +82,14 @@ class FileOpResult(ToolResult):
 
     Used by CoderAgent to verify file writes and edits.
     """
+
     path: str = Field(description="Absolute path to the affected file")
     operation: str = Field(description="Type of operation: 'create', 'edit', 'delete'")
     diff: str | None = Field(default=None, description="Unified diff of changes")
     size_bytes: int | None = Field(default=None, description="Size of file after operation")
-    verification_passed: bool = Field(default=False, description="Whether post-write verification passed")
+    verification_passed: bool = Field(
+        default=False, description="Whether post-write verification passed"
+    )
 
 
 # =============================================================================
@@ -110,6 +103,7 @@ class TaskContext(BaseModel):
 
     Replaces the 'Mystery Meat' dict context in AgentRunner.
     """
+
     task_id: UUID = Field(description="Unique ID of the task being executed")
     user_request: str = Field(description="The original user request")
     repo_path: str = Field(description="Absolute path to the repository")
@@ -150,15 +144,12 @@ class AgentOutput(BaseModel):
 
     # Action tracking
     tool_calls: list[ToolCall] = Field(
-        default_factory=list,
-        description="The atomic actions the agent requested"
+        default_factory=list, description="The atomic actions the agent requested"
     )
 
     # Confidence for human review triggering
     confidence_score: float = Field(
-        ge=0.0,
-        le=1.0,
-        description="Agent's certainty (0.0-1.0). Low scores trigger human review."
+        ge=0.0, le=1.0, description="Agent's certainty (0.0-1.0). Low scores trigger human review."
     )
 
     # Metadata
@@ -166,8 +157,7 @@ class AgentOutput(BaseModel):
         description="The persona of the agent that generated this output"
     )
     timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="When this output was generated"
+        default_factory=lambda: datetime.now(UTC), description="When this output was generated"
     )
 
     @property
@@ -195,20 +185,16 @@ class TaskStep(BaseModel):
     description: str = Field(description="What this step accomplishes")
     agent_persona: AgentPersona = Field(description="Which agent should execute this")
     estimated_tokens: int | None = Field(
-        default=None,
-        description="Estimated LLM tokens for this step"
+        default=None, description="Estimated LLM tokens for this step"
     )
     depends_on: list[str] = Field(
-        default_factory=list,
-        description="List of step_ids that must complete first"
+        default_factory=list, description="List of step_ids that must complete first"
     )
     dependencies: list[int] = Field(
-        default_factory=list,
-        description="Deprecated: Step numbers this step depends on"
+        default_factory=list, description="Deprecated: Step numbers this step depends on"
     )
     files_affected: list[str] = Field(
-        default_factory=list,
-        description="Files that will be modified"
+        default_factory=list, description="Files that will be modified"
     )
 
 
@@ -224,18 +210,12 @@ class TaskPlan(BaseModel):
     summary: str = Field(description="High-level description of the plan")
     steps: list[TaskStep] = Field(description="Ordered list of steps to execute")
     estimated_complexity: int = Field(
-        ge=1,
-        le=10,
-        description="Complexity score (1=simple, 10=very complex)"
+        ge=1, le=10, description="Complexity score (1=simple, 10=very complex)"
     )
     affected_files: list[str] = Field(
-        default_factory=list,
-        description="All files that will be modified"
+        default_factory=list, description="All files that will be modified"
     )
-    risks: list[str] = Field(
-        default_factory=list,
-        description="Potential risks or considerations"
-    )
+    risks: list[str] = Field(default_factory=list, description="Potential risks or considerations")
 
     @property
     def total_steps(self) -> int:
@@ -251,19 +231,10 @@ class ChangeSet(BaseModel):
     """
 
     file_path: str = Field(description="Path to the file being modified")
-    action: str = Field(
-        description="Type of change: 'create', 'modify', 'delete'"
-    )
-    diff: str = Field(
-        description="Unified diff format showing the changes"
-    )
-    explanation: str = Field(
-        description="Human-readable explanation of what the change does"
-    )
-    language: str | None = Field(
-        default=None,
-        description="Programming language of the file"
-    )
+    action: str = Field(description="Type of change: 'create', 'modify', 'delete'")
+    diff: str = Field(description="Unified diff format showing the changes")
+    explanation: str = Field(description="Human-readable explanation of what the change does")
+    language: str | None = Field(default=None, description="Programming language of the file")
     line_count_before: int | None = Field(default=None)
     line_count_after: int | None = Field(default=None)
 
@@ -306,15 +277,9 @@ class DocUpdateLog(BaseModel):
     pass all tests.
     """
 
-    files_updated: list[str] = Field(
-        description="List of documentation files that were updated"
-    )
-    changes: list[ChangeSet] = Field(
-        description="The actual changes made to each file"
-    )
-    summary: str = Field(
-        description="Summary of documentation updates for release notes"
-    )
+    files_updated: list[str] = Field(description="List of documentation files that were updated")
+    changes: list[ChangeSet] = Field(description="The actual changes made to each file")
+    summary: str = Field(description="Summary of documentation updates for release notes")
 
 
 # =============================================================================

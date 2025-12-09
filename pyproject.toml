@@ -34,6 +34,7 @@ dependencies = [
     "tenacity>=8.2.0",
     "cryptography>=42.0.0",
     "honcho>=2.0.0",
+    "pytest>=9.0.2",
 ]
 
 [project.optional-dependencies]

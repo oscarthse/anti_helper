@@ -27,14 +27,13 @@ Pillar C: System Events - Did Redis receive the completion event?
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -43,8 +42,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.db.models import AgentLog, Repository, Task, TaskStatus
-from backend.app.workers.task_executor import RealityEngine, RealityCheckError
-
+from backend.app.workers.task_executor import RealityEngine
 
 # =============================================================================
 # Test Fixtures
@@ -88,8 +86,8 @@ async def registered_repo(db_session: AsyncSession, temp_repo: Path):
         path=str(temp_repo),
         description="E2E test repository",
         project_type="python",
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     db_session.add(repo)
     await db_session.flush()
@@ -112,8 +110,8 @@ async def mission(db_session: AsyncSession, registered_repo: Repository):
         status=TaskStatus.PENDING,
         current_step=0,
         retry_count=0,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     db_session.add(task)
     await db_session.flush()
@@ -197,13 +195,15 @@ class TestMissionLifecycle:
         absolute_path = verified_action.path
 
         # THEN: The file MUST exist on disk (Reality Check)
-        assert os.path.exists(absolute_path), \
-            f"HALLUCINATION DETECTED: File {absolute_path} was claimed but doesn't exist!"
+        assert os.path.exists(
+            absolute_path
+        ), f"HALLUCINATION DETECTED: File {absolute_path} was claimed but doesn't exist!"
 
         # AND: The content MUST match exactly
         actual_content = Path(absolute_path).read_text()
-        assert actual_content == file_content, \
-            f"CONTENT MISMATCH: Expected '{file_content}', got '{actual_content}'"
+        assert (
+            actual_content == file_content
+        ), f"CONTENT MISMATCH: Expected '{file_content}', got '{actual_content}'"
 
         # AND: The engine should track what was written
         assert absolute_path in engine.written_files
@@ -269,8 +269,9 @@ class TestMissionLifecycle:
         final_files = set(f.name for f in temp_repo.iterdir())
         new_files = final_files - initial_files
 
-        assert new_files == {"expected.py"}, \
-            f"UNEXPECTED FILES CREATED: {new_files - {'expected.py'}}"
+        assert new_files == {
+            "expected.py"
+        }, f"UNEXPECTED FILES CREATED: {new_files - {'expected.py'}}"
 
     # =========================================================================
     # PILLAR A: Database Integrity
@@ -309,7 +310,7 @@ class TestMissionLifecycle:
             assert mission.status == expected_status
 
         # AND: Mark completion timestamp
-        mission.completed_at = datetime.now(timezone.utc)
+        mission.completed_at = datetime.now(UTC)
         await db_session.flush()
 
         assert mission.completed_at is not None
@@ -337,7 +338,7 @@ class TestMissionLifecycle:
             technical_reasoning="Parsed user intent for file creation.",
             confidence_score=0.9,
             requires_review=False,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
         log2 = AgentLog(
@@ -348,12 +349,10 @@ class TestMissionLifecycle:
             ui_title="💻 Creating File",
             ui_subtitle="Writing hello.py to disk.",
             technical_reasoning="Using create_new_module tool.",
-            tool_calls=[
-                {"tool_name": "create_new_module", "arguments": {"path": "hello.py"}}
-            ],
+            tool_calls=[{"tool_name": "create_new_module", "arguments": {"path": "hello.py"}}],
             confidence_score=0.95,
             requires_review=False,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
         db_session.add(log1)
@@ -362,9 +361,7 @@ class TestMissionLifecycle:
 
         # THEN: We should be able to query them back
         result = await db_session.execute(
-            select(AgentLog)
-            .where(AgentLog.task_id == mission.id)
-            .order_by(AgentLog.step_number)
+            select(AgentLog).where(AgentLog.task_id == mission.id).order_by(AgentLog.step_number)
         )
         logs = result.scalars().all()
 
@@ -403,7 +400,7 @@ class TestMissionLifecycle:
             bus = RedisEventBus()
             await bus.connect()
 
-            num_subscribers = await bus.publish(
+            _num_subscribers = await bus.publish(  # noqa: F841
                 channel=task_channel("test-task-123"),
                 event_type="agent_log",
                 data={"ui_title": "Test Event"},
@@ -444,7 +441,17 @@ class TestMissionLifecycle:
                 tool_name="create_new_module",
                 arguments={
                     "file_path": "hello.py",
-                    "code": "print('success')",
+                    "content": '''"""Hello world module."""
+
+
+def main() -> None:
+    """Print a success message."""
+    print('success')
+
+
+if __name__ == "__main__":
+    main()
+''',
                     "explanation": "Creating hello world file",
                 },
             )
@@ -542,9 +549,10 @@ class TestMissionLifecycle:
             return create_mock_completion_response()
 
         # GIVEN: Mocked LLM client
-        with patch("gravity_core.llm.client.LLMClient.generate_with_tools",
-                   new=AsyncMock(side_effect=mock_generate_with_tools)):
-
+        with patch(
+            "gravity_core.llm.client.LLMClient.generate_with_tools",
+            new=AsyncMock(side_effect=mock_generate_with_tools),
+        ):
             # --- PHASE 1: Setup Verification ---
             # The mission should start as PENDING
             assert mission.status == TaskStatus.PENDING
@@ -559,8 +567,7 @@ class TestMissionLifecycle:
             # Write the file directly (simulating what CoderAgent would do)
             engine = RealityEngine(str(temp_repo))
             verified_action = engine.write_file(
-                "mission_output.py",
-                "# Mission accomplished\nprint('success')"
+                "mission_output.py", "# Mission accomplished\nprint('success')"
             )
             written_path = verified_action.path
 
@@ -568,7 +575,7 @@ class TestMissionLifecycle:
 
             # PILLAR A: Database Integrity
             mission.status = TaskStatus.COMPLETED
-            mission.completed_at = datetime.now(timezone.utc)
+            mission.completed_at = datetime.now(UTC)
             await db_session.flush()
 
             # Verify task is marked complete
@@ -587,7 +594,7 @@ class TestMissionLifecycle:
                 technical_reasoning="I have physically written 'mission_output.py' to disk.",
                 confidence_score=0.95,
                 requires_review=False,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
             db_session.add(log)
             await db_session.flush()
@@ -600,12 +607,14 @@ class TestMissionLifecycle:
             assert len(logs) >= 1
 
             # PILLAR B: Filesystem Reality
-            assert os.path.exists(written_path), \
-                f"HALLUCINATION: File {written_path} doesn't exist on disk!"
+            assert os.path.exists(
+                written_path
+            ), f"HALLUCINATION: File {written_path} doesn't exist on disk!"
 
             content = Path(written_path).read_text()
-            assert "print('success')" in content, \
-                f"CONTENT MISMATCH: Expected 'print(\"success\")' in file"
+            assert (
+                "print('success')" in content
+            ), f"CONTENT MISMATCH: Expected 'print(\"success\")' in file"
 
             # Anti-hallucination: verify no extra files
             all_verified, missing = engine.verify_all_writes(["mission_output.py"])

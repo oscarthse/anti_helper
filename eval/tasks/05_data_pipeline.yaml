@@ -1,0 +1,24 @@
+id: "05_data_pipeline"
+repo_id: "test_agent"
+description: |
+  Create a data processing pipeline in the 'data_pipeline' subdirectory.
+  
+  Requirements:
+  - Create data_pipeline/ directory structure
+  - Python ETL pipeline using pandas
+  - Read CSV data, transform it, output to JSON and SQLite
+  - Transformations: clean nulls, normalize dates, calculate aggregates
+  - Include sample input CSV with realistic data (sales/users/etc)
+  - Logging with structlog for pipeline steps
+  - Configuration file (YAML or JSON) for pipeline settings
+  - Include requirements.txt
+  - Add README.md with pipeline documentation
+  - Write tests for each transformation step
+  - Include data validation checks
+  
+  The pipeline should be modular and well-tested.
+tags:
+  - "data"
+  - "etl"
+  - "from_scratch"
+timeout_seconds: 1200

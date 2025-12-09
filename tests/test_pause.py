@@ -1,18 +1,21 @@
-
 import asyncio
 import os
 import sys
-from sqlalchemy import select, update
 from uuid import UUID
+
+import pytest
+from sqlalchemy import update
 
 # Add project root to path
 sys.path.append(os.getcwd())
 
-from backend.app.db.session import get_session
 from backend.app.db.models import Task, TaskStatus
+from backend.app.db.session import get_session
 
+
+@pytest.mark.skip(reason="Requires PostgreSQL database connection")
 async def test_pause_resume():
-    root_id = '1adb518e-7d5d-43cd-a275-c9375e237d3d' # From previous inspection
+    root_id = "1adb518e-7d5d-43cd-a275-c9375e237d3d"  # From previous inspection
 
     print(f"Testing PAUSE on Root Task {root_id}...")
 
@@ -32,6 +35,7 @@ async def test_pause_resume():
         await session.commit()
         print("-> Set status to EXECUTING. Worker should resume.")
         return
+
 
 if __name__ == "__main__":
     asyncio.run(test_pause_resume())

@@ -1,0 +1,23 @@
+id: "02_weather_cli"
+repo_id: "test_agent"
+description: |
+  Build a command-line weather application in the 'weather_cli' subdirectory.
+  
+  Requirements:
+  - Create weather_cli/ directory structure
+  - Python CLI using Click or Typer framework
+  - Fetch weather data from OpenWeatherMap API (use mock/fake API key for testing)
+  - Commands: current weather, 5-day forecast, save favorite cities
+  - Store favorite cities in JSON file
+  - Rich terminal output with colors and formatting
+  - Include requirements.txt
+  - Add README.md with installation and usage
+  - Write unit tests with mocked API responses
+  - Handle API errors gracefully
+  
+  The CLI should be user-friendly and well-documented.
+tags:
+  - "cli"
+  - "python"
+  - "from_scratch"
+timeout_seconds: 1200

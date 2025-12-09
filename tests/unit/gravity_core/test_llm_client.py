@@ -97,14 +97,14 @@ class TestResponseValidation:
 
     def test_valid_response_passes_validation(self, client):
         """Test valid JSON passes schema validation."""
-        valid_json = '''{
+        valid_json = """{
             "ui_title": "Test Title",
             "ui_subtitle": "Test subtitle",
             "technical_reasoning": "Test reasoning",
             "tool_calls": [],
             "confidence_score": 0.9,
             "agent_persona": "planner"
-        }'''
+        }"""
 
         result = client._validate_response(valid_json, AgentOutput, "test")
 
@@ -124,12 +124,12 @@ class TestResponseValidation:
 
     def test_missing_required_field_raises_validation_error(self, client):
         """Test missing required fields raise LLMValidationError."""
-        missing_field_json = '''{
+        missing_field_json = """{
             "ui_title": "Test",
             "technical_reasoning": "Test",
             "confidence_score": 0.9,
             "agent_persona": "planner"
-        }'''  # Missing ui_subtitle
+        }"""  # Missing ui_subtitle
 
         with pytest.raises(LLMValidationError) as exc_info:
             client._validate_response(missing_field_json, AgentOutput, "test")
@@ -138,13 +138,13 @@ class TestResponseValidation:
 
     def test_invalid_confidence_score_raises_validation_error(self, client):
         """Test invalid confidence_score raises LLMValidationError."""
-        invalid_confidence = '''{
+        invalid_confidence = """{
             "ui_title": "Test",
             "ui_subtitle": "Test",
             "technical_reasoning": "Test",
             "confidence_score": 1.5,
             "agent_persona": "planner"
-        }'''  # confidence > 1.0
+        }"""  # confidence > 1.0
 
         with pytest.raises(LLMValidationError) as exc_info:
             client._validate_response(invalid_confidence, AgentOutput, "test")
@@ -268,7 +268,11 @@ class TestRetryLogic:
             # Mock the OpenAI client call to fail then succeed
             mock_completion = AsyncMock()
             mock_completion.choices = [
-                MagicMock(message=MagicMock(content='{"ui_title":"Test","ui_subtitle":"Test","technical_reasoning":"Test","confidence_score":0.9,"agent_persona":"planner"}'))
+                MagicMock(
+                    message=MagicMock(
+                        content='{"ui_title":"Test","ui_subtitle":"Test","technical_reasoning":"Test","confidence_score":0.9,"agent_persona":"planner"}'
+                    )
+                )
             ]
 
             # Configure mock

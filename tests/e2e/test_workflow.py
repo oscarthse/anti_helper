@@ -7,7 +7,7 @@ verifying the full loop from task creation to completion.
 
 # Add project paths
 # Add project paths
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
@@ -144,8 +144,8 @@ class TestSandboxIsolation:
         # In local mode without Docker, curl might work, but in sandbox it won't
         assert isinstance(result, dict)
         if result.get("success") is False:
-             # If it failed/blocked
-             return
+            # If it failed/blocked
+            return
         # If it succeeded (local with network/fallback), check stdout?
         # assert isinstance(result, ToolCall) # ToolRegistry returns ToolCall
 
@@ -173,13 +173,13 @@ class TestSandboxIsolation:
         # Mock run_shell_command to simulate sandbox blocking
         # Since actual runtime implementation might not block locally
         async def mock_run_shell(cmd, **kwargs):
-             return {
-                 "success": False,
-                 "error": "Command blocked by sandbox: potentially dangerous",
-                 "stdout": "",
-                 "stderr": "",
-                 "exit_code": 1
-             }
+            return {
+                "success": False,
+                "error": "Command blocked by sandbox: potentially dangerous",
+                "stdout": "",
+                "stderr": "",
+                "exit_code": 1,
+            }
 
         with patch("gravity_core.tools.runtime.run_shell_command", side_effect=mock_run_shell):
             for cmd in dangerous_commands:
@@ -191,9 +191,7 @@ class TestSandboxIsolation:
                     pytest.fail(f"Dangerous command {cmd} succeeded: {result}")
 
                 error_msg = (
-                    result.get("error", "")
-                    or result.get("stderr", "")
-                    or result.get("stdout", "")
+                    result.get("error", "") or result.get("stderr", "") or result.get("stdout", "")
                 )
                 # If not blocked by sandbox, it might fail with permission error
                 assert (
@@ -225,8 +223,8 @@ class TestFullLoopSimulation:
             status=TaskStatus.PENDING,
             current_step=0,
             retry_count=0,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         db_session.add(task)
         await db_session.flush()
@@ -256,7 +254,7 @@ class TestFullLoopSimulation:
             assert task.status == state
 
         # Mark as completed
-        task.completed_at = datetime.now(timezone.utc)
+        task.completed_at = datetime.now(UTC)
         await session.flush()
 
         assert task.status == TaskStatus.COMPLETED
@@ -280,7 +278,7 @@ class TestFullLoopSimulation:
             technical_reasoning="Parsing user intent.",
             confidence_score=0.85,
             requires_review=False,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             duration_ms=1500,
         )
         session.add(planner_log)
@@ -298,7 +296,7 @@ class TestFullLoopSimulation:
             tool_calls=[{"tool_name": "edit_file_snippet", "success": True}],
             confidence_score=0.9,
             requires_review=False,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             duration_ms=2500,
         )
         session.add(coder_log)
@@ -353,11 +351,11 @@ class TestExceptionHandling:
 
         # Checking result type:
         if hasattr(result, "get"):
-             assert result["success"] is True
-             assert "quick" in result["stdout"]
+            assert result["success"] is True
+            assert "quick" in result["stdout"]
         else:
-             assert result.success is True
-             assert "quick" in result.result
+            assert result.success is True
+            assert "quick" in result.result
 
     @pytest.mark.asyncio
     async def test_missing_file_handling(self):

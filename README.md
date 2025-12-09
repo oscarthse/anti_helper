@@ -12,12 +12,14 @@
 |-----------|------|------------|
 | **THE BRAIN** (GravityCore) | Intelligence & Skillset | Custom Python library with agent personas, LLM integration (`client.py`), and 15+ tools |
 | **THE BODY** (FastAPI) | State Manager & Dispatcher | FastAPI, SQLAlchemy Async, Dramatiq, Redis, Alembic |
-| **THE FACE** (Frontend) | Visual Renderer | Next.js 14, TypeScript, Tailwind, Shadcn UI, Framer Motion |
+| **THE FACE** (Frontend) | Visual Renderer | **Vite + React 18**, TanStack Query v5, Tailwind, Shadcn UI, Framer Motion |
 
 **Recent Critical Updates (Dec 2025):**
-- 🛡️ **Protocol "Verified Reality":** "Sledgehammer" verification logic guarantees files are physically written to disk.
-- 🧠 **Technical Mandate:** Planner now enforces strict implementation specs, eliminating "lazy placeholder" code.
-- 🕹️ **Headless Debugger:** `scripts/run_agent.py` allows rapid Agent verification without the full backend stack.
+- 🎨 **UI Overhaul (Dec 8):** Complete frontend migration from Next.js to Vite + React 18 with real-time SSE streaming
+- 🔄 **Real-Time Sync:** Fixed progress tracking, activity stream, and file tree with TanStack Query v5 polling + SSE
+- 📝 **README Mandate:** Agent prompts now enforce project-specific README content (no generic templates)
+- 🛡️ **Protocol "Verified Reality":** "Sledgehammer" verification logic guarantees files are physically written to disk
+- 🧠 **Quality Thresholds:** Coder agents enforce minimum code volume and prohibit placeholder implementations
 
 ## 🤖 Agent Personas
 

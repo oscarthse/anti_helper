@@ -15,12 +15,9 @@ The Reality Engine Protocol:
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from uuid import UUID
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +25,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.config import settings
 from backend.app.db.models import Task, TaskStatus
 from backend.app.schemas.reality import FileAction, VerifiedFileAction
+from libs.gravity_core.tracking import (
+    ExecutionMetrics,
+    _metrics_context,
+    get_current_metrics,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -192,8 +194,7 @@ class RealityEngine:
         # Verify original content exists
         if original_content not in current_content:
             raise ValueError(
-                f"Original content not found in file. "
-                f"Cannot perform edit on {absolute_path}"
+                f"Original content not found in file. " f"Cannot perform edit on {absolute_path}"
             )
 
         # Perform replacement
@@ -206,14 +207,10 @@ class RealityEngine:
             for _ in range(occurrence):
                 idx = current_content.find(original_content, idx + 1)
                 if idx == -1:
-                    raise ValueError(
-                        f"Could not find occurrence {occurrence} of original content"
-                    )
+                    raise ValueError(f"Could not find occurrence {occurrence} of original content")
 
             modified_content = (
-                current_content[:idx] +
-                new_content +
-                current_content[idx + len(original_content):]
+                current_content[:idx] + new_content + current_content[idx + len(original_content) :]
             )
 
         # Write modified content
@@ -334,6 +331,13 @@ class TaskExecutor:
         from gravity_core.agents.qa import QAAgent
         from gravity_core.llm import LLMClient
 
+        # NEW: Import Policy Manager explicitly
+        from gravity_core.tools.policies import (
+            FileAccessPolicy,
+            clear_current_policy,
+            set_current_policy,
+        )
+
         logger.info(
             "task_executor_started",
             task_id=str(self.task.id),
@@ -351,185 +355,225 @@ class TaskExecutor:
         self.task.status = TaskStatus.EXECUTING
         await self.session.commit()
 
-        fix_attempts = 0
-        test_commands = self.context.get("test_commands", ["pytest"])
+        # ---------------------------------------------------------
+        # POLICY SETUP: Enforce Read-Before-Write & Metrics
+        # ---------------------------------------------------------
+        policy = FileAccessPolicy()
+        set_current_policy(policy)
+        metrics_token = _metrics_context.set(ExecutionMetrics())
 
-        while fix_attempts < self.max_fix_attempts:
-            # ---------------------------------------------------------
-            # CODER Phase: Generate/Edit Code
-            # ---------------------------------------------------------
-            self.task.current_agent = "coder_be"
-            await self.session.commit()
+        try:
+            fix_attempts = 0
+            test_commands = self.context.get("test_commands", ["pytest"])
 
-            coder = CoderAgent(
-                specialty="be",
-                llm_client=llm_client,
-                model_name=settings.default_llm_model,
-            )
+            while fix_attempts < self.max_fix_attempts:
+                # ---------------------------------------------------------
+                # CODER Phase: Generate/Edit Code
+                # ---------------------------------------------------------
+                self.task.current_agent = "coder_be"
+                await self.session.commit()
 
-            # Get step metadata from subtask's task_plan (populated by _materialize_plan_to_db)
-            step_metadata = self.task.task_plan or {}
-            files_affected = step_metadata.get("files_affected", [])
+                coder = CoderAgent(
+                    specialty="be",
+                    llm_client=llm_client,
+                    # Removed model_name override to use role-based config
+                )
 
-            # DIAGNOSTIC: Log what files we're expecting this subtask to create
-            logger.info(
-                "subtask_files_affected",
-                task_id=str(self.task.id),
-                task_title=self.task.title,
-                step_order=self.context.get("step_order", 0),
-                files_affected=files_affected,
-                step_metadata_keys=list(step_metadata.keys()),
-            )
+                # Get step metadata from subtask's task_plan (populated by _materialize_plan_to_db)
+                step_metadata = self.task.task_plan or {}
+                files_affected = step_metadata.get("files_affected", [])
 
-            step_context = {
-                **self.context,
-                "step": {
-                    "description": self.task.user_request,
-                    "files_affected": files_affected,
-                },
-                "task_description": self.task.user_request,
-                "reality_engine": self.reality_engine,  # Pass Reality Engine
-            }
+                # DIAGNOSTIC: Log what files we're expecting this subtask to create
+                logger.info(
+                    "subtask_files_affected",
+                    task_id=str(self.task.id),
+                    task_title=self.task.title,
+                    step_order=self.context.get("step_order", 0),
+                    files_affected=files_affected,
+                    step_metadata_keys=list(step_metadata.keys()),
+                )
 
-            coder_output = await coder.execute(self.task.id, step_context)
+                step_context = {
+                    **self.context,
+                    "step": {
+                        "description": self.task.user_request,
+                        "files_affected": files_affected,
+                    },
+                    "task_description": self.task.user_request,
+                    "reality_engine": self.reality_engine,  # Pass Reality Engine
+                }
 
-            # Log coder output
-            from backend.app.workers.agent_runner import log_agent_output
-            await log_agent_output(
-                session=self.session,
-                task_id=self.task.id,
-                agent_output=coder_output,
-                step_number=self.context.get("step_order", 1),
-                root_task_id=self.context.get("root_task_id"),
-            )
+                coder_output = await coder.execute(self.task.id, step_context)
 
-            # ---------------------------------------------------------
-            # REALITY CHECK: Verify files were written
-            # ---------------------------------------------------------
-            claimed_files = self._extract_claimed_files(coder_output)
+                # Log coder output
+                from backend.app.workers.agent_runner import log_agent_output
 
-            if claimed_files:
-                all_verified, missing = self.reality_engine.verify_all_writes(claimed_files)
-
-                if not all_verified:
-                    fix_attempts += 1
-
-                    # Inject error feedback
-                    step_context["system_feedback"] = (
-                        f"CRITICAL ERROR: You claimed to create file(s) {missing}, "
-                        f"but I checked the OS and they are MISSING. You likely "
-                        f"hallucinated the tool call or the path is wrong. "
-                        f"TRY AGAIN. USE THE TOOLS."
-                    )
-
-                    logger.warning(
-                        "reality_check_failed",
-                        task_id=str(self.task.id),
-                        missing_files=missing,
-                        attempt=fix_attempts,
-                    )
-                    continue
-
-            # ---------------------------------------------------------
-            # PUBLISH VERIFIED FILE EVENTS
-            # Only reached if reality check passed - files are real
-            # ---------------------------------------------------------
-            from backend.app.workers.agent_runner import publish_verified_file_event
-            for verified_action in self.reality_engine.verified_actions:
-                await publish_verified_file_event(
+                await log_agent_output(
+                    session=self.session,
                     task_id=self.task.id,
-                    verified_action=verified_action,
+                    agent_output=coder_output,
+                    step_number=self.context.get("step_order", 1),
                     root_task_id=self.context.get("root_task_id"),
                 )
 
-            # Check if review required
-            if coder_output.requires_review:
-                self.task.status = TaskStatus.REVIEW_REQUIRED
+                # ---------------------------------------------------------
+                # REALITY CHECK: Verify files were written
+                # ---------------------------------------------------------
+                claimed_files = self._extract_claimed_files(coder_output)
+
+                if claimed_files:
+                    all_verified, missing = self.reality_engine.verify_all_writes(claimed_files)
+
+                    if not all_verified:
+                        fix_attempts += 1
+
+                        # Inject error feedback
+                        step_context["system_feedback"] = (
+                            f"CRITICAL ERROR: You claimed to create file(s) {missing}, "
+                            f"but I checked the OS and they are MISSING. You likely "
+                            f"hallucinated the tool call or the path is wrong. "
+                            f"TRY AGAIN. USE THE TOOLS."
+                        )
+
+                        logger.warning(
+                            "reality_check_failed",
+                            task_id=str(self.task.id),
+                            missing_files=missing,
+                            attempt=fix_attempts,
+                        )
+                        continue
+
+                # ---------------------------------------------------------
+                # PUBLISH VERIFIED FILE EVENTS
+                # Only reached if reality check passed - files are real
+                # ---------------------------------------------------------
+                from backend.app.workers.agent_runner import publish_verified_file_event
+
+                for verified_action in self.reality_engine.verified_actions:
+                    await publish_verified_file_event(
+                        task_id=self.task.id,
+                        verified_action=verified_action,
+                        root_task_id=self.context.get("root_task_id"),
+                    )
+
+                # Check if review required
+                if coder_output.requires_review:
+                    self.task.status = TaskStatus.REVIEW_REQUIRED
+                    await self.session.commit()
+                    return ExecutionResult(success=True)
+
+                # Track changeset
+                try:
+                    reasoning = json.loads(coder_output.technical_reasoning)
+                    changes = reasoning.get("changes", [])
+                    if changes:
+                        self._changeset = changes[0]
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
                 await self.session.commit()
-                return ExecutionResult(success=True)
 
-            # Track changeset
-            try:
-                reasoning = json.loads(coder_output.technical_reasoning)
-                changes = reasoning.get("changes", [])
-                if changes:
-                    self._changeset = changes[0]
-            except (json.JSONDecodeError, KeyError):
-                pass
+                # ---------------------------------------------------------
+                # QA Phase: Run Tests
+                # ---------------------------------------------------------
+                self.task.current_agent = "qa"
+                self.task.status = TaskStatus.TESTING
+                await self.session.commit()
 
-            await self.session.commit()
-
-            # ---------------------------------------------------------
-            # QA Phase: Run Tests
-            # ---------------------------------------------------------
-            self.task.current_agent = "qa"
-            self.task.status = TaskStatus.TESTING
-            await self.session.commit()
-
-            qa = QAAgent(
-                llm_client=llm_client,
-                model_name=settings.default_llm_model,
-                max_fix_attempts=self.max_fix_attempts,
-            )
-
-            qa_context = {
-                **self.context,
-                "test_commands": test_commands,
-                "last_changeset": self._changeset,
-                "task_goal": self.task.user_request,
-            }
-
-            qa_output = await qa.execute(self.task.id, qa_context)
-
-            await log_agent_output(
-                session=self.session,
-                task_id=self.task.id,
-                agent_output=qa_output,
-                step_number=self.context.get("step_order", 1),
-                root_task_id=self.context.get("root_task_id"),
-            )
-
-            # Check test results
-            if qa_output.confidence_score >= 0.9:
-                # Tests passed
-                logger.info("tests_passed", task_id=str(self.task.id))
-                break
-
-            # Tests failed
-            if qa.has_suggested_fix():
-                fix_attempts += 1
-                suggested_fix = qa.get_suggested_fix()
-
-                logger.info(
-                    "applying_suggested_fix",
-                    task_id=str(self.task.id),
-                    attempt=fix_attempts,
+                qa = QAAgent(
+                    llm_client=llm_client,
+                    # Removed model_name override to use role-based config
+                    max_fix_attempts=self.max_fix_attempts,
                 )
 
-                step_context["suggested_fix"] = {
-                    "tool_call": suggested_fix.model_dump() if suggested_fix else None,
-                    "attempt": fix_attempts,
+                qa_context = {
+                    **self.context,
+                    "test_commands": test_commands,
+                    "last_changeset": self._changeset,
+                    "task_goal": self.task.user_request,
                 }
-                continue
-            else:
-                if qa_output.confidence_score < 0.5:
-                    return ExecutionResult(
-                        success=False,
-                        error="Tests failed without automatic fix",
+
+                qa_output = await qa.execute(self.task.id, qa_context)
+
+                # METRICS: Capture QA metrics
+                if hasattr(qa, "_execution_runs") and qa._execution_runs:
+                    last_run = qa._execution_runs[-1]
+                    self.task.tests_run_command = last_run.get("command")
+                    self.task.tests_exit_code = last_run.get("exit_code")
+
+                await self.session.commit()
+
+                from backend.app.workers.agent_runner import log_agent_output
+
+                await log_agent_output(
+                    session=self.session,
+                    task_id=self.task.id,
+                    agent_output=qa_output,
+                    step_number=self.context.get("step_order", 1),
+                    root_task_id=self.context.get("root_task_id"),
+                )
+
+                # Check test results
+                if qa_output.confidence_score >= 0.9:
+                    # Tests passed
+                    logger.info("tests_passed", task_id=str(self.task.id))
+                    break
+
+                # Tests failed
+                if qa.has_suggested_fix():
+                    fix_attempts += 1
+                    self.task.fix_attempts_count = fix_attempts  # Update counter
+
+                    suggested_fix = qa.get_suggested_fix()
+
+                    logger.info(
+                        "applying_suggested_fix",
+                        task_id=str(self.task.id),
+                        attempt=fix_attempts,
                     )
-                break
 
-        if fix_attempts >= self.max_fix_attempts:
-            logger.warning(
-                "max_fix_attempts_reached",
-                task_id=str(self.task.id),
+                    step_context["suggested_fix"] = {
+                        "tool_call": suggested_fix.model_dump() if suggested_fix else None,
+                        "attempt": fix_attempts,
+                    }
+                    continue
+                else:
+                    if qa_output.confidence_score < 0.5:
+                        return ExecutionResult(
+                            success=False,
+                            error="Tests failed without automatic fix",
+                        )
+                    break
+
+            if fix_attempts >= self.max_fix_attempts:
+                logger.warning(
+                    "max_fix_attempts_reached",
+                    task_id=str(self.task.id),
+                )
+
+            # METRICS: Capture quality metrics
+            metrics = get_current_metrics()
+            self.task.files_changed_count = len(metrics.files_changed)
+            # self.task.fix_attempts_count = metrics.fix_attempts # Need to instrument fix attempts first
+
+            # Merge RealityEngine manual writes if any (legacy support)
+            if hasattr(self.reality_engine, "written_files"):
+                manual_writes = set(self.reality_engine.written_files)
+                # Combine with tracked writes
+                total_files = len(manual_writes.union(metrics.files_changed))
+                self.task.files_changed_count = total_files
+
+            await self.session.commit()
+
+            return ExecutionResult(
+                success=True,
+                changeset=self._changeset,
+                files_written=list(metrics.files_changed),
             )
-
-        return ExecutionResult(
-            success=True,
-            changeset=self._changeset,
-            files_written=self.reality_engine.written_files,
-        )
+        finally:
+            # CLEANUP: Ensure policy and metrics are cleared
+            clear_current_policy()
+            _metrics_context.reset(metrics_token)
 
     def _extract_claimed_files(self, coder_output) -> list[str]:
         """Extract file paths that the coder claimed to create/edit."""
@@ -539,9 +583,9 @@ class TaskExecutor:
             for tool in coder_output.tool_calls:
                 if tool.tool_name in ["create_new_module", "edit_file_snippet", "write_to_file"]:
                     path = (
-                        tool.arguments.get("file_path") or
-                        tool.arguments.get("path") or
-                        tool.arguments.get("target_file")
+                        tool.arguments.get("file_path")
+                        or tool.arguments.get("path")
+                        or tool.arguments.get("target_file")
                     )
                     if path:
                         files.append(path)

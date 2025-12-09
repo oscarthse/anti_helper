@@ -13,7 +13,6 @@ import ast
 import importlib.util
 import sys
 from dataclasses import dataclass
-from typing import List, Set, Tuple
 
 import structlog
 
@@ -23,9 +22,10 @@ logger = structlog.get_logger(__name__)
 @dataclass
 class LintResult:
     """Result of a linting operation."""
+
     success: bool
     error: str | None = None
-    missing_deps: List[str] | None = None
+    missing_deps: list[str] | None = None
 
 
 class GravityLinter:
@@ -76,15 +76,11 @@ class GravityLinter:
             if missing_deps:
                 error_msg = f"Missing dependencies: {', '.join(missing_deps)}"
                 logger.warning("linter_deps_error", file=file_path, missing=missing_deps)
-                return LintResult(
-                    success=False,
-                    error=error_msg,
-                    missing_deps=missing_deps
-                )
+                return LintResult(success=False, error=error_msg, missing_deps=missing_deps)
 
         return LintResult(success=True)
 
-    def _check_imports(self, tree: ast.AST) -> List[str]:
+    def _check_imports(self, tree: ast.AST) -> list[str]:
         """
         Walk the AST to find imports and verify they exist in the environment.
         """
@@ -93,10 +89,10 @@ class GravityLinter:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    imports.add(alias.name.split('.')[0])
+                    imports.add(alias.name.split(".")[0])
             elif isinstance(node, ast.ImportFrom):
                 if node.module:
-                    imports.add(node.module.split('.')[0])
+                    imports.add(node.module.split(".")[0])
 
         missing = []
         for module_name in imports:

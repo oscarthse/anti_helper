@@ -84,7 +84,42 @@ Identify potential issues:
 - External service dependencies
 - Complex logic requiring extra testing
 
-### 6. MANDATORY README.md (Non-Negotiable)
+### 6. Architecture Requirements (MANDATORY for APIs/Applications)
+When creating applications, ALWAYS ensure:
+
+**Entry Point (CRITICAL):**
+- Every application MUST have an entry point file (e.g., `main.py`, `app.py`)
+- This file initializes the framework, includes all routers, and starts the server
+- Without this, the application cannot run
+
+**Layered Architecture (Separation of Concerns):**
+For REST APIs or backend applications, enforce this structure:
+- **Routes Layer**: ONLY handles HTTP (request parsing, response formatting)
+- **Services Layer**: Contains ALL business logic - routes MUST import and call services
+- **Models Layer**: Data schemas (Pydantic) and ORM models (SQLAlchemy)
+
+Example FastAPI structure:
+- `app/main.py` - `app = FastAPI()`, `app.include_router()`
+- `app/routes/users.py` - Imports `UserService`, calls `service.create_user()`
+- `app/services/user_service.py` - Business logic, database queries
+- `app/models/user.py` - `User` Pydantic model
+
+**Dependency Injection:**
+Routes should NOT contain business logic. They delegate to services:
+```python
+# ✅ CORRECT: Route calls service
+@router.post("/users")
+def create_user(data: UserCreate, service: UserService = Depends()):
+    return service.create_user(data)
+
+# ❌ WRONG: Route contains logic
+@router.post("/users")
+def create_user(data: UserCreate):
+    user = User(**data.dict())  # Business logic in route!
+    db.add(user)
+```
+
+### 7. MANDATORY README.md (Non-Negotiable)
 **EVERY** plan MUST include a final step to create/update `README.md`:
 - Assigned to: `coder_infra`
 - Files affected: `[NEW] README.md` or `README.md`
@@ -171,7 +206,7 @@ class PlannerAgent(BaseAgent):
         self,
         llm_client: LLMClient | None = None,
         project_map: ProjectMap | None = None,
-        model_name: str = "gpt-4o",
+        model_name: str | None = None,
     ):
         """
         Initialize the Planner agent.
@@ -179,18 +214,25 @@ class PlannerAgent(BaseAgent):
         Args:
             llm_client: LLMClient instance for structured generation
             project_map: ProjectMap for RAG context
-            model_name: LLM model to use for planning
+            model_name: LLM model to use for planning (defaults to role config)
         """
         super().__init__()
+
+        # Get role-specific LLM configuration
+        from gravity_core.llm.settings import get_config
+
+        config = get_config(self.persona)
 
         # Initialize LLM client (uses env vars if not provided)
         self.llm_client = llm_client or LLMClient()
         self.project_map = project_map
-        self.model_name = model_name
+        self.model_name = model_name or config.model_name
+        self.temperature = config.temperature
 
         logger.info(
             "planner_initialized",
-            model=model_name,
+            model=self.model_name,
+            temperature=self.temperature,
             has_project_map=project_map is not None,
         )
 
@@ -278,14 +320,17 @@ class PlannerAgent(BaseAgent):
             return self.build_output(
                 ui_title=f"📋 Strategic Plan: {len(task_plan.steps)} Steps",
                 ui_subtitle=self._generate_subtitle(task_plan),
-                technical_reasoning=json.dumps({
-                    "task_plan": task_plan.model_dump(mode='json'),
-                    "rag_influence": {
-                        "context_retrieved": bool(rag_context),
-                        "context_length": len(rag_context) if rag_context else 0,
+                technical_reasoning=json.dumps(
+                    {
+                        "task_plan": task_plan.model_dump(mode="json"),
+                        "rag_influence": {
+                            "context_retrieved": bool(rag_context),
+                            "context_length": len(rag_context) if rag_context else 0,
+                        },
+                        "model_used": self.model_name,
                     },
-                    "model_used": self.model_name,
-                }, indent=2),
+                    indent=2,
+                ),
                 confidence_score=confidence,
                 tool_calls=tool_calls,
             )
@@ -299,11 +344,13 @@ class PlannerAgent(BaseAgent):
             return self.build_output(
                 ui_title="⚠️ Plan Requires Review",
                 ui_subtitle="I generated a plan but it needs human verification.",
-                technical_reasoning=json.dumps({
-                    "error": "LLM output validation failed",
-                    "validation_errors": e.validation_errors,
-                    "raw_response": e.raw_response[:1000],
-                }),
+                technical_reasoning=json.dumps(
+                    {
+                        "error": "LLM output validation failed",
+                        "validation_errors": e.validation_errors,
+                        "raw_response": e.raw_response[:1000],
+                    }
+                ),
                 confidence_score=0.3,  # Low confidence triggers review
                 tool_calls=tool_calls,
             )
@@ -318,11 +365,13 @@ class PlannerAgent(BaseAgent):
             return self.build_output(
                 ui_title="❌ Planning Failed",
                 ui_subtitle="Could not connect to AI service. Please try again.",
-                technical_reasoning=json.dumps({
-                    "error": str(e),
-                    "provider": e.provider,
-                    "retryable": e.retryable,
-                }),
+                technical_reasoning=json.dumps(
+                    {
+                        "error": str(e),
+                        "provider": e.provider,
+                        "retryable": e.retryable,
+                    }
+                ),
                 confidence_score=0.0,
                 tool_calls=tool_calls,
             )
@@ -398,9 +447,9 @@ class PlannerAgent(BaseAgent):
             for pattern in search_patterns:
                 for file_path, file_info in self.project_map.files.items():
                     if (
-                        pattern.lower() in file_path.lower() or
-                        any(pattern.lower() in c.lower() for c in file_info.classes) or
-                        any(pattern.lower() in f.lower() for f in file_info.functions)
+                        pattern.lower() in file_path.lower()
+                        or any(pattern.lower() in c.lower() for c in file_info.classes)
+                        or any(pattern.lower() in f.lower() for f in file_info.functions)
                     ):
                         relevant_files.append(file_path)
 
@@ -448,28 +497,75 @@ class PlannerAgent(BaseAgent):
         patterns.extend(quoted)
 
         # Find CamelCase words (likely class names)
-        camel_case = re.findall(r'[A-Z][a-z]+(?:[A-Z][a-z]+)+', user_request)
+        camel_case = re.findall(r"[A-Z][a-z]+(?:[A-Z][a-z]+)+", user_request)
         patterns.extend(camel_case)
 
         # Find snake_case words (likely function/file names)
-        snake_case = re.findall(r'[a-z]+_[a-z][a-z_]*', user_request)
+        snake_case = re.findall(r"[a-z]+_[a-z][a-z_]*", user_request)
         patterns.extend(snake_case)
 
         # Find file extensions (likely file references)
-        file_refs = re.findall(r'\b[\w/]+\.\w+\b', user_request)
+        file_refs = re.findall(r"\b[\w/]+\.\w+\b", user_request)
         patterns.extend(file_refs)
 
         # Extract significant words (length > 4, not stopwords)
         stopwords = {
-            'about', 'above', 'after', 'again', 'all', 'also', 'and', 'any',
-            'because', 'been', 'before', 'being', 'between', 'both', 'but',
-            'could', 'each', 'have', 'having', 'here', 'into', 'just', 'made',
-            'make', 'more', 'most', 'need', 'only', 'other', 'over', 'please',
-            'should', 'some', 'such', 'than', 'that', 'the', 'their', 'them',
-            'then', 'there', 'these', 'they', 'this', 'through', 'want', 'what',
-            'when', 'where', 'which', 'while', 'will', 'with', 'would',
+            "about",
+            "above",
+            "after",
+            "again",
+            "all",
+            "also",
+            "and",
+            "any",
+            "because",
+            "been",
+            "before",
+            "being",
+            "between",
+            "both",
+            "but",
+            "could",
+            "each",
+            "have",
+            "having",
+            "here",
+            "into",
+            "just",
+            "made",
+            "make",
+            "more",
+            "most",
+            "need",
+            "only",
+            "other",
+            "over",
+            "please",
+            "should",
+            "some",
+            "such",
+            "than",
+            "that",
+            "the",
+            "their",
+            "them",
+            "then",
+            "there",
+            "these",
+            "they",
+            "this",
+            "through",
+            "want",
+            "what",
+            "when",
+            "where",
+            "which",
+            "while",
+            "will",
+            "with",
+            "would",
         }
-        words = re.findall(r'\b([a-zA-Z]{5,})\b', user_request.lower())
+        words = re.findall(r"\b([a-zA-Z]{5,})\b", user_request.lower())
         significant = [w for w in words if w not in stopwords]
         patterns.extend(significant[:3])  # Limit to top 3
 
@@ -504,7 +600,7 @@ class PlannerAgent(BaseAgent):
             output_schema=TaskPlan,
             model_name=self.model_name,
             system_prompt=PLANNER_SYSTEM_PROMPT,
-            temperature=0.4,  # Lower temperature for more consistent plans
+            temperature=self.temperature,
         )
 
         logger.info(

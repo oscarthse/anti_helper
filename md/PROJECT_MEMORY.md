@@ -223,3 +223,73 @@ dramatiq backend.app.workers --processes 2
 **Infrastructure:**
 - ✅ **CI/CD:** `ci.yml` pipeline operational (Fixed `psycopg2` dependency, venv installation)
 - ✅ **Makefile:** Standardized development commands (`make dev`, `make test-all`)
+
+### 2025-12-08
+
+**🔥 MAJOR: Frontend Migration from Next.js to Vite + React**
+- ✅ **Complete Rewrite:** Migrated from Next.js 14 to Vite + React 18
+- ✅ **145 files changed:** 13,502 insertions, 12,127 deletions
+- ✅ **Tech Stack:** Vite, React 18, TanStack Query v5, Framer Motion
+
+**🎯 UI Synchronization Fixes (Critical)**
+
+| Issue | Root Cause | Fix |
+|-------|------------|-----|
+| **Progress bar stuck at 0/8** | `DAGExecutor` never updated `root_task.current_step` in DB | Added `self.root_task.current_step = self._tasks_completed` + commit in `dag_executor.py` |
+| **Activity Stream empty** | SSE initial fetch only queried root task logs, missing subtask logs | Modified `streaming.py` to query logs from both root task AND all subtasks via parent_task_id join |
+| **Files tab empty** | `files` router not registered in API `__init__.py` | Added files router export and registration |
+| **Real-time updates not working** | React Query v5 `refetchInterval` callback receives Query object, not data | Fixed to use `query.state.data?.status` pattern |
+
+**📦 New Frontend Architecture**
+
+```
+frontend/src/
+├── api/
+│   └── antigravityClient.js     # Custom fetch wrapper (replaces @base44/sdk)
+├── components/
+│   └── anti-helper/             # NEW: Task-specific components
+│       ├── AgentAvatar.jsx      # Agent persona avatars
+│       ├── FileTree.jsx         # Filesystem tree from API
+│       ├── LiveStream.jsx       # SSE-powered activity stream
+│       ├── LogEntry.jsx         # Expandable log cards
+│       ├── NewTaskModal.jsx     # Task creation dialog
+│       ├── ProgressBar.jsx      # Step progress visualization
+│       ├── StatusBadge.jsx      # Task status indicators
+│       ├── TaskCard.jsx         # Dashboard task cards
+│       ├── TaskControls.jsx     # Pause/Resume/Delete controls
+│       └── TaskPlanView.jsx     # DAG plan visualization
+├── hooks/
+│   └── useAgentEvents.js        # SSE hook with auto-reconnection
+├── pages/
+│   ├── Dashboard.jsx            # Task grid + repository management
+│   └── TaskWarRoom.jsx          # Split view: Activity + Plan/Files
+└── lib/
+    └── query-client.js          # TanStack Query configuration
+```
+
+**🛡️ Agent Prompt Enhancements**
+
+| Agent | Enhancement |
+|-------|-------------|
+| **CODER_INFRA** | Added "README.md REQUIREMENTS" section prohibiting generic templates, requiring project-specific content |
+| **PLANNER** | Added "MANDATORY README.md" section with explicit content requirements |
+| **CODER_BE/FE** | Added "QUALITY THRESHOLDS" with anti-placeholder and minimum code volume rules |
+
+**🔌 Backend SSE Pipeline**
+
+| Component | Change |
+|-----------|--------|
+| `streaming.py` | Initial fetch now includes `ChangeSet` file data + subtask logs |
+| `dag_executor.py` | Persists `current_step` after each subtask completion |
+| `events.py` | Redis pub/sub for zero-DB SSE streaming |
+| `files.py` | Endpoint to scan actual filesystem (not just DB records) |
+
+**✅ Key Files Modified**
+- `backend/app/api/streaming.py` - Subtask log query + file_changes fetch
+- `backend/app/services/dag_executor.py` - Progress persistence
+- `backend/app/api/__init__.py` - Registered files router
+- `frontend/src/pages/TaskWarRoom.jsx` - React Query polling + merged logs
+- `frontend/src/hooks/useAgentEvents.js` - SSE reconnection logic
+- `frontend/src/components/anti-helper/FileTree.jsx` - API-based tree
+- `libs/gravity_core/agents/coder.py` - README requirements in CODER_INFRA
+- `libs/gravity_core/agents/planner.py` - README mandate in plan generation

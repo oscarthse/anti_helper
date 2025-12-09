@@ -57,7 +57,6 @@ def standalone_function():
     async def test_scan_repo_structure(self, temp_repo):
         """Test scanning repository structure."""
 
-
         result = await scan_repo_structure(str(temp_repo))
 
         assert result["root"] == str(temp_repo)
@@ -72,7 +71,6 @@ def standalone_function():
     async def test_scan_repo_structure_with_depth(self, temp_repo):
         """Test scanning with depth limit."""
 
-
         result = await scan_repo_structure(str(temp_repo), max_depth=1)
 
         names = [item["name"] for item in result["tree"]]
@@ -82,7 +80,6 @@ def standalone_function():
     async def test_scan_repo_structure_nonexistent(self):
         """Test scanning nonexistent directory."""
 
-
         result = await scan_repo_structure("/nonexistent/path/to/repo")
 
         assert "error" in result
@@ -90,7 +87,6 @@ def standalone_function():
     @pytest.mark.asyncio
     async def test_search_codebase(self, temp_repo):
         """Test searching codebase for patterns."""
-
 
         result = await search_codebase(str(temp_repo), "MyClass")
 
@@ -105,7 +101,6 @@ def standalone_function():
     async def test_search_codebase_no_matches(self, temp_repo):
         """Test searching with no matches."""
 
-
         result = await search_codebase(str(temp_repo), "NonexistentPattern12345")
 
         assert len(result["matches"]) == 0
@@ -113,7 +108,6 @@ def standalone_function():
     @pytest.mark.asyncio
     async def test_get_file_signatures(self, temp_repo):
         """Test extracting file signatures."""
-
 
         result = await get_file_signatures(str(temp_repo / "src" / "main.py"))
 
@@ -126,7 +120,6 @@ def standalone_function():
     @pytest.mark.asyncio
     async def test_get_file_signatures_nonexistent(self):
         """Test extracting signatures from nonexistent file."""
-
 
         result = await get_file_signatures("/nonexistent/file.py")
 
@@ -158,14 +151,13 @@ def greet(name):
     async def test_edit_file_snippet_success(self, temp_file):
         """Test successful file snippet editing."""
 
-
         result = await edit_file_snippet(
             temp_file,
             old_content='return "Hello, World!"',
             new_content='return "Goodbye, World!"',
         )
 
-        assert result["success"] is True
+        assert result.success is True
         # Verify the edit was made
         content = Path(temp_file).read_text()
         assert 'return "Goodbye, World!"' in content
@@ -174,15 +166,14 @@ def greet(name):
     async def test_edit_file_snippet_not_found(self, temp_file):
         """Test editing with content not in file."""
 
-
         result = await edit_file_snippet(
             temp_file,
             old_content="nonexistent content",
             new_content="new content",
         )
 
-        assert result["success"] is False
-        assert "error" in result
+        assert result.success is False
+        assert result.error is not None
 
     @pytest.mark.asyncio
     async def test_edit_file_snippet_multiple_matches(self, temp_file):
@@ -194,7 +185,6 @@ return True
 return True
 """)
 
-
         # Replace first occurrence (default)
         result = await edit_file_snippet(
             temp_file,
@@ -202,8 +192,7 @@ return True
             new_content="return False",
         )
 
-        assert result["success"] is True
-        assert result["replaced_count"] == 1
+        assert result.success is True
 
         content = Path(temp_file).read_text()
         assert "return False" in content
@@ -213,20 +202,18 @@ return True
     async def test_edit_file_nonexistent(self):
         """Test editing nonexistent file."""
 
-
         result = await edit_file_snippet(
             "/nonexistent/file.py",
             old_content="old",
             new_content="new",
         )
 
-        assert result["success"] is False
-        assert "error" in result
+        assert result.success is False
+        assert result.error is not None
 
     @pytest.mark.asyncio
     async def test_create_new_module(self):
         """Test creating a new module."""
-
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create dummy pyproject.toml to stop recursion
@@ -235,10 +222,10 @@ return True
 
             result = await create_new_module(
                 str(new_file),
-                content='def new_function(): pass',
+                content="def new_function(): pass",
             )
 
-            assert result["success"] is True
+            assert result.success is True
             assert new_file.exists()
             assert "def new_function" in new_file.read_text()
 
@@ -254,7 +241,6 @@ class TestRuntimeTools:
     async def test_run_shell_command_success(self):
         """Test running a simple shell command."""
 
-
         result = await run_shell_command("echo 'Hello, World!'")
 
         assert result["success"] is True
@@ -263,7 +249,6 @@ class TestRuntimeTools:
     @pytest.mark.asyncio
     async def test_run_shell_command_failure(self):
         """Test running a command that fails."""
-
 
         result = await run_shell_command("exit 1")
 
@@ -275,7 +260,6 @@ class TestRuntimeTools:
     async def test_run_shell_command_blocked_dangerous(self):
         """Test that dangerous commands are blocked."""
 
-
         # Try to run rm -rf (should be blocked)
         result = await run_shell_command("rm -rf /")
 
@@ -285,7 +269,6 @@ class TestRuntimeTools:
     @pytest.mark.asyncio
     async def test_run_shell_command_timeout(self):
         """Test command timeout handling."""
-
 
         # This test runs "echo 'quick'" with timeout 1s.
         # It should succeed fast enough.
@@ -297,7 +280,6 @@ class TestRuntimeTools:
     @pytest.mark.asyncio
     async def test_read_file_outside_repo_blocked(self):
         """Test that reading files outside repo is blocked."""
-
 
         # Attempt to read /etc/passwd
         result = await run_shell_command("cat /etc/passwd")
@@ -313,7 +295,6 @@ class TestKnowledgeTools:
     async def test_check_dependency_version_installed(self):
         """Test checking version of installed package."""
 
-
         result = await check_dependency_version("pydantic")
 
         # Returns dict
@@ -324,7 +305,6 @@ class TestKnowledgeTools:
     @pytest.mark.asyncio
     async def test_check_dependency_version_not_installed(self):
         """Test checking version of package not installed."""
-
 
         result = await check_dependency_version("nonexistent-package-12345")
 
@@ -371,7 +351,6 @@ class TestVersionControlTools:
     async def test_git_diff_staged_no_changes(self, temp_git_repo):
         """Test git diff when no changes are staged."""
 
-
         result = await git_diff_staged(str(temp_git_repo))
 
         assert result["success"] is True
@@ -382,8 +361,6 @@ class TestVersionControlTools:
     async def test_git_diff_staged_with_changes(self, temp_git_repo):
         """Test git diff with staged changes."""
         import subprocess
-
-
 
         # Make and stage a change
         (temp_git_repo / "new_file.py").write_text("print('hello')")

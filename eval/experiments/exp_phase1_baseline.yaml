@@ -1,0 +1,12 @@
+experiment_id: "exp_phase1_baseline"
+description: "Phase 1 baseline: deterministic coder, balanced planner, linter warning-only"
+use_judge: true  # Judge is critical for quality assessment
+llm:
+  planner_temperature: 0.35
+  coder_temperature: 0.25
+  qa_temperature: 0.25
+  docs_temperature: 0.60
+policies:
+  read_before_write: true
+  linter_blocking: false
+  max_fix_attempts: 3

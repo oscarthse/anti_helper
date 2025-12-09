@@ -7,20 +7,18 @@ It bypasses the LLM stream and reads directly from the State Machine (PostgreSQL
 """
 
 import asyncio
-import json
 from datetime import datetime
+from typing import Any
 from uuid import UUID
-from typing import List, Dict, Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
-from pydantic import BaseModel, Field
-from sqlalchemy import select, and_
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from backend.app.db import get_session
-from backend.app.db.models import Task, TaskDependency, TaskStatus, AgentLog
+from backend.app.db.models import AgentLog, Task, TaskDependency, TaskStatus
 
 logger = structlog.get_logger()
 
@@ -30,10 +28,12 @@ router = APIRouter()
 # Models (The Protocol)
 # =============================================================================
 
+
 class DAGEdge(BaseModel):
     blocker_id: UUID
     blocked_id: UUID
     reason: str | None
+
 
 class DAGNode(BaseModel):
     id: UUID
@@ -41,32 +41,38 @@ class DAGNode(BaseModel):
     status: TaskStatus
     parent_id: UUID | None
     retry_count: int
-    definition_of_done: Dict[str, Any] | None
+    definition_of_done: dict[str, Any] | None
     # For UI Viz
     agent: str | None
 
     class Config:
         from_attributes = True
 
+
 class DAGState(BaseModel):
     """The Full Truth of the System State."""
+
     root_task_id: UUID
-    tasks: List[DAGNode]
-    edges: List[DAGEdge]
+    tasks: list[DAGNode]
+    edges: list[DAGEdge]
     updated_at: datetime
+
 
 class DashboardEvent(BaseModel):
     """Structured Log for the Event Stream."""
+
     id: UUID
-    type: str # SCHEDULER, REFEREE, LINTER, AGENT
-    subtype: str | None # REJECTION, SELECTION, etc.
+    type: str  # SCHEDULER, REFEREE, LINTER, AGENT
+    subtype: str | None  # REJECTION, SELECTION, etc.
     message: str
     timestamp: datetime
-    metadata: Dict[str, Any] | None
+    metadata: dict[str, Any] | None
+
 
 # =============================================================================
 # Endpoints
 # =============================================================================
+
 
 @router.get("/{root_task_id}/state", response_model=DAGState)
 async def get_dag_state(
@@ -97,8 +103,8 @@ async def get_dag_state(
 
     # 2. Fetch dependencies
     stmt_edges = select(TaskDependency).where(
-        (TaskDependency.blocker_task_id.in_(task_ids)) |
-        (TaskDependency.blocked_task_id.in_(task_ids))
+        (TaskDependency.blocker_task_id.in_(task_ids))
+        | (TaskDependency.blocked_task_id.in_(task_ids))
     )
     result_edges = await session.execute(stmt_edges)
     edges = result_edges.scalars().all()
@@ -110,29 +116,24 @@ async def get_dag_state(
             title=t.title or t.user_request[:50],
             status=t.status,
             parent_id=t.parent_task_id,
-            retry_count=getattr(t, 'retry_count', 0),
-            definition_of_done=getattr(t, 'definition_of_done', None),
-            agent=t.current_agent
-        ) for t in tasks
+            retry_count=getattr(t, "retry_count", 0),
+            definition_of_done=getattr(t, "definition_of_done", None),
+            agent=t.current_agent,
+        )
+        for t in tasks
     ]
 
     dag_edges = [
-        DAGEdge(
-            blocker_id=e.blocker_task_id,
-            blocked_id=e.blocked_task_id,
-            reason=e.reason
-        ) for e in edges
+        DAGEdge(blocker_id=e.blocker_task_id, blocked_id=e.blocked_task_id, reason=e.reason)
+        for e in edges
     ]
 
     return DAGState(
-        root_task_id=root_task_id,
-        tasks=dag_nodes,
-        edges=dag_edges,
-        updated_at=datetime.utcnow()
+        root_task_id=root_task_id, tasks=dag_nodes, edges=dag_edges, updated_at=datetime.utcnow()
     )
 
 
-@router.get("/{root_task_id}/events", response_model=List[DashboardEvent])
+@router.get("/{root_task_id}/events", response_model=list[DashboardEvent])
 async def get_dashboard_events(
     root_task_id: UUID,
     limit: int = 100,
@@ -144,13 +145,14 @@ async def get_dashboard_events(
     """
     # Fetch logs for all tasks in this tree
     # Subquery for task IDs
-    subq = select(Task.id).where(
-        (Task.id == root_task_id) | (Task.parent_task_id == root_task_id)
-    )
+    subq = select(Task.id).where((Task.id == root_task_id) | (Task.parent_task_id == root_task_id))
 
-    stmt = select(AgentLog).where(
-        AgentLog.task_id.in_(subq)
-    ).order_by(AgentLog.created_at.desc()).limit(limit)
+    stmt = (
+        select(AgentLog)
+        .where(AgentLog.task_id.in_(subq))
+        .order_by(AgentLog.created_at.desc())
+        .limit(limit)
+    )
 
     result = await session.execute(stmt)
     logs = result.scalars().all()
@@ -160,28 +162,28 @@ async def get_dashboard_events(
         # Heuristic mapping for now
         evt_type = "AGENT"
         if log.agent_persona == "system":
-            evt_type = "SYSTEM" # Could be SCHEDULER or REFEREE if we parsed log content
+            evt_type = "SYSTEM"  # Could be SCHEDULER or REFEREE if we parsed log content
 
         # In future, AgentLog should have event_type column.
         # For now, we infer from title/subtitle
 
-        events.append(DashboardEvent(
-            id=log.id,
-            type=evt_type,
-            subtype=None,
-            message=f"[{log.ui_title}] {log.ui_subtitle}",
-            timestamp=log.created_at,
-            metadata={"step": log.step_number, "requires_review": log.requires_review}
-        ))
+        events.append(
+            DashboardEvent(
+                id=log.id,
+                type=evt_type,
+                subtype=None,
+                message=f"[{log.ui_title}] {log.ui_subtitle}",
+                timestamp=log.created_at,
+                metadata={"step": log.step_number, "requires_review": log.requires_review},
+            )
+        )
 
     return events
 
 
 @router.websocket("/{root_task_id}/stream")
 async def websocket_dashboard_stream(
-    websocket: WebSocket,
-    root_task_id: UUID,
-    session: AsyncSession = Depends(get_session)
+    websocket: WebSocket, root_task_id: UUID, session: AsyncSession = Depends(get_session)
 ):
     """
     Real-time State Push.
@@ -197,9 +199,12 @@ async def websocket_dashboard_stream(
             # To be efficient, maybe just check MAX(updated_at)?
             # Models don't have updated_at on all tables reliably? Task does.
 
-            stmt = select(Task.updated_at).where(
-                (Task.id == root_task_id) | (Task.parent_task_id == root_task_id)
-            ).order_by(Task.updated_at.desc()).limit(1)
+            stmt = (
+                select(Task.updated_at)
+                .where((Task.id == root_task_id) | (Task.parent_task_id == root_task_id))
+                .order_by(Task.updated_at.desc())
+                .limit(1)
+            )
 
             result = await session.execute(stmt)
             latest_update = result.scalar_one_or_none()
@@ -219,8 +224,8 @@ async def websocket_dashboard_stream(
                 task_ids = [t.id for t in tasks]
 
                 stmt_edges = select(TaskDependency).where(
-                    (TaskDependency.blocker_task_id.in_(task_ids)) |
-                    (TaskDependency.blocked_task_id.in_(task_ids))
+                    (TaskDependency.blocker_task_id.in_(task_ids))
+                    | (TaskDependency.blocked_task_id.in_(task_ids))
                 )
                 edges = (await session.execute(stmt_edges)).scalars().all()
 
@@ -229,24 +234,28 @@ async def websocket_dashboard_stream(
                         "id": str(t.id),
                         "title": t.title,
                         "status": t.status.value,
-                        "retry_count": getattr(t, 'retry_count', 0),
-                        "agent": t.current_agent
-                    } for t in tasks
+                        "retry_count": getattr(t, "retry_count", 0),
+                        "agent": t.current_agent,
+                    }
+                    for t in tasks
                 ]
 
                 payload = {
                     "type": "STATE_UPDATE",
                     "data": {
                         "tasks": dag_nodes,
-                        "edges": [{"blocker": str(e.blocker_task_id), "blocked": str(e.blocked_task_id)} for e in edges],
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
+                        "edges": [
+                            {"blocker": str(e.blocker_task_id), "blocked": str(e.blocked_task_id)}
+                            for e in edges
+                        ],
+                        "timestamp": datetime.utcnow().isoformat(),
+                    },
                 }
 
                 await websocket.send_json(payload)
                 last_hash = current_hash
 
-            await asyncio.sleep(1) # Pulse
+            await asyncio.sleep(1)  # Pulse
 
     except WebSocketDisconnect:
         logger.info("dashboard_ws_disconnect", root_task_id=str(root_task_id))

@@ -96,6 +96,7 @@ class LLMValidationError(LLMClientError):
 
 class LLMProviderError(LLMClientError):
     """Raised for provider-specific API errors."""
+
     pass
 
 
@@ -114,6 +115,7 @@ class LLMRateLimitError(LLMClientError):
 
 class LLMProvider(str, Enum):
     """Supported LLM providers."""
+
     OPENAI = "openai"
     GEMINI = "gemini"
 
@@ -380,10 +382,12 @@ class LLMClient:
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         else:
-            messages.append({
-                "role": "system",
-                "content": self._get_default_system_prompt(output_schema),
-            })
+            messages.append(
+                {
+                    "role": "system",
+                    "content": self._get_default_system_prompt(output_schema),
+                }
+            )
         messages.append({"role": "user", "content": prompt})
 
         # Get JSON schema for structured output
@@ -543,9 +547,12 @@ class LLMClient:
     ) -> T:
         """Validate and parse LLM response against Pydantic schema."""
         try:
-            # Try to parse as JSON first
+            # Clean the response first (handle dirty JSON)
+            cleaned_content = self._clean_json_response(content)
+
+            # Try to parse as JSON
             try:
-                parsed = json.loads(content)
+                parsed = json.loads(cleaned_content)
             except json.JSONDecodeError as e:
                 raise LLMValidationError(
                     f"Invalid JSON from {provider}: {e}",
@@ -573,6 +580,52 @@ class LLMClient:
                     for err in errors
                 ],
             )
+
+    def _clean_json_response(self, content: str) -> str:
+        """
+        Clean common LLM output artifacts from JSON responses.
+
+        Handles:
+        - Markdown code fences (```json ... ```)
+        - Trailing commas in objects/arrays
+        - JavaScript-style comments (// and /* */)
+        - Leading/trailing whitespace and text
+        """
+        import re
+
+        cleaned = content.strip()
+
+        # 1. Extract JSON from markdown code fences
+        # Match ```json ... ``` or ``` ... ```
+        fence_pattern = r"```(?:json)?\s*\n?([\s\S]*?)\n?```"
+        fence_match = re.search(fence_pattern, cleaned, re.IGNORECASE)
+        if fence_match:
+            cleaned = fence_match.group(1).strip()
+
+        # 2. Remove JavaScript-style line comments (// comment)
+        # Only remove if not inside a string (simplified: lines ending with // comment)
+        cleaned = re.sub(r"//[^\n]*$", "", cleaned, flags=re.MULTILINE)
+
+        # 3. Remove JavaScript-style block comments (/* ... */)
+        cleaned = re.sub(r"/\*[\s\S]*?\*/", "", cleaned)
+
+        # 4. Remove trailing commas before } or ]
+        # Match comma followed by whitespace and closing bracket
+        cleaned = re.sub(r",(\s*[}\]])", r"\1", cleaned)
+
+        # 5. If still not starting with { or [, try to find the JSON object
+        cleaned = cleaned.strip()
+        if cleaned and cleaned[0] not in "{[":
+            # Look for first { or [
+            start_idx = -1
+            for i, char in enumerate(cleaned):
+                if char in "{[":
+                    start_idx = i
+                    break
+            if start_idx >= 0:
+                cleaned = cleaned[start_idx:]
+
+        return cleaned
 
     def _get_default_system_prompt(self, output_schema: type[BaseModel]) -> str:
         """Generate default system prompt for structured output."""
@@ -701,11 +754,13 @@ Respond ONLY with the JSON object."""
 
             if message.tool_calls:
                 for tc in message.tool_calls:
-                    tool_calls.append({
-                        "id": tc.id,
-                        "name": tc.function.name,
-                        "arguments": json.loads(tc.function.arguments),
-                    })
+                    tool_calls.append(
+                        {
+                            "id": tc.id,
+                            "name": tc.function.name,
+                            "arguments": json.loads(tc.function.arguments),
+                        }
+                    )
 
             return text_response, tool_calls
 

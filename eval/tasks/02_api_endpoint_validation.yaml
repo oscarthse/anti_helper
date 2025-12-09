@@ -1,0 +1,14 @@
+id: "02_api_endpoint_validation"
+repo_id: "backend_example_repo"
+description: |
+  Add input validation to the user registration endpoint.
+  Requirements:
+    - Validate email format
+    - Validate password strength (min 8 chars, 1 uppercase, 1 number)
+    - Return clear error messages for invalid inputs
+    - Add unit tests for validation logic
+tags:
+  - "backend"
+  - "validation"
+  - "testing"
+timeout_seconds: 600

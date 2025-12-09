@@ -14,8 +14,8 @@ Key Responsibilities:
 
 from __future__ import annotations
 
+import ast
 import json
-import os
 import re
 from pathlib import Path
 from typing import Any
@@ -294,7 +294,7 @@ class CoderAgent(BaseAgent):
         self,
         specialty: str = "backend",
         llm_client: LLMClient | None = None,
-        model_name: str = "gpt-4o",
+        model_name: str | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -303,17 +303,11 @@ class CoderAgent(BaseAgent):
         Args:
             specialty: One of 'backend', 'frontend', 'infra'
             llm_client: LLMClient instance (created if not provided)
-            model_name: LLM model to use
+            model_name: LLM model to use (defaults to role config)
         """
         super().__init__(**kwargs)
 
-        self.model_name = model_name
-        self.llm_client = llm_client or LLMClient()
-        self._changes: list[ChangeSet] = []
-        # DISABLE strict_deps to allow creating files with new dependencies (e.g. streamlit)
-        self.linter = GravityLinter(strict_deps=False)
-
-        # Set persona based on specialty
+        # Set persona based on specialty FIRST (needed for config lookup)
         if specialty == "frontend" or specialty == "fe":
             self.persona = AgentPersona.CODER_FE
             self.system_prompt = CODER_FE_SYSTEM_PROMPT
@@ -324,10 +318,23 @@ class CoderAgent(BaseAgent):
             self.persona = AgentPersona.CODER_BE
             self.system_prompt = CODER_BE_SYSTEM_PROMPT
 
+        # Get role-specific LLM configuration
+        from gravity_core.llm.settings import get_config
+
+        config = get_config(self.persona)
+
+        self.model_name = model_name or config.model_name
+        self.temperature = config.temperature
+        self.llm_client = llm_client or LLMClient()
+        self._changes: list[ChangeSet] = []
+        # DISABLE strict_deps to allow creating files with new dependencies (e.g. streamlit)
+        self.linter = GravityLinter(strict_deps=False)
+
         logger.info(
             "coder_initialized",
             specialty=specialty,
-            model=model_name,
+            model=self.model_name,
+            temperature=self.temperature,
         )
 
     async def execute(
@@ -380,8 +387,46 @@ class CoderAgent(BaseAgent):
                 repo_path=repo_path,
             )
 
-            # Step 6: Run linter on affected files
-            await self.call_tool("run_linter_fix", path=repo_path)
+            # Step 6: Self-Check Phase (Syntax & Lint)
+            from gravity_core.guardrails.quality_gates import CoderSelfCheck
+
+            # We prefer to check the specific files we modified
+            # If RealityEngine is available, use it. Otherwise fall back to accumulated changes or repo path?
+            reality_engine = context.get("reality_engine")
+
+            check_files = []
+            if reality_engine:
+                check_files = reality_engine.written_files
+            else:
+                # Fallback: check files_affected intended by the plan
+                check_files = [f"{repo_path}/{f}" for f in files_affected]
+
+            if check_files:
+                self_check = CoderSelfCheck()
+                check_result = await self_check.verify(files_changed=check_files)
+
+                if not check_result.success:
+                    # BLOCKING FAILURE - Syntax errors or critical issues
+                    error_details = "\n".join(check_result.errors)
+                    logger.warning("coder_self_check_failed", errors=error_details)
+
+                    return self.build_output(
+                        ui_title="❌ Self-Check Failed",
+                        ui_subtitle="Your code has syntax errors. Please fix them.",
+                        technical_reasoning=json.dumps(
+                            {
+                                "error": "Self-Check Failed",
+                                "details": check_result.errors,
+                                "files": check_result.files_checked,
+                            },
+                            indent=2,
+                        ),
+                        confidence_score=0.2,  # Low confidence triggers retry or review
+                    )
+
+                # Non-blocking warnings
+                if check_result.warnings:
+                    logger.info("coder_self_check_warnings", warnings=check_result.warnings)
 
             # Step 7: Get the final diff
             diff_result = await self.call_tool("git_diff_staged", path=repo_path)
@@ -408,10 +453,13 @@ class CoderAgent(BaseAgent):
             return self.build_output(
                 ui_title="⚠️ Code Generation Issue",
                 ui_subtitle="The code generation didn't produce valid output. Please review.",
-                technical_reasoning=json.dumps({
-                    "error": str(e),
-                    "raw_response": e.raw_response,
-                }, indent=2),
+                technical_reasoning=json.dumps(
+                    {
+                        "error": str(e),
+                        "raw_response": e.raw_response,
+                    },
+                    indent=2,
+                ),
                 confidence_score=0.3,
             )
 
@@ -441,9 +489,7 @@ class CoderAgent(BaseAgent):
         re-prompting the LLM until the mandate is fulfilled.
         """
         # Clean file paths - strip [NEW] prefix if present
-        remaining_files = set(
-            f.replace("[NEW] ", "").strip() for f in files_affected
-        )
+        remaining_files = set(f.replace("[NEW] ", "").strip() for f in files_affected)
         max_iterations = 3
         iteration = 0
 
@@ -453,18 +499,18 @@ class CoderAgent(BaseAgent):
             # Determine tool choice strategy
             # Default: Require ANY tool
             current_tool_choice = "required"
-            prompt = user_prompt # Initialize prompt, will be overwritten if iteration > 1
+            prompt = user_prompt  # Initialize prompt, will be overwritten if iteration > 1
 
             # RETRY STRATEGY: If this is a retry for missing files, FORCE "create_new_module"
             if iteration > 1:
                 logger.warning(
                     "coder_retry_force_tool",
                     iteration=iteration,
-                    missing_files=list(remaining_files)
+                    missing_files=list(remaining_files),
                 )
                 current_tool_choice = {
                     "type": "function",
-                    "function": {"name": "create_new_module"}
+                    "function": {"name": "create_new_module"},
                 }
                 missing_list = "\n".join(f"  - {f}" for f in sorted(remaining_files))
                 prompt = f"""## CRITICAL: MISSING FILES
@@ -483,10 +529,7 @@ For each file listed above:
 
 ⚠️ REMAINING FILES ({len(remaining_files)}): {', '.join(sorted(remaining_files))}"""
 
-            tool_calls = await self._generate_with_tools(
-                prompt,
-                tool_choice=current_tool_choice
-            )
+            tool_calls = await self._generate_with_tools(prompt, tool_choice=current_tool_choice)
 
             # Track what files the LLM attempted
             files_in_tool_calls = set()
@@ -512,6 +555,16 @@ For each file listed above:
             created_files = {c.file_path for c in self._changes}
             remaining_files = remaining_files - created_files - files_in_tool_calls
 
+            # SMART DETECTION: Analyze created files for imports to non-existent modules
+            missing_imports = self._detect_missing_imports(repo_path)
+            if missing_imports:
+                logger.info(
+                    "detected_missing_imports",
+                    iteration=iteration,
+                    files=list(missing_imports),
+                )
+                remaining_files.update(missing_imports)
+
         # Final validation
         if remaining_files:
             logger.error(
@@ -524,6 +577,82 @@ For each file listed above:
                 f"CoderAgent failed to create {len(remaining_files)} files: {', '.join(sorted(remaining_files))}"
             )
 
+    def _detect_missing_imports(self, repo_path: str) -> set[str]:
+        """
+        Analyze created files for imports to non-existent local modules.
+
+        This enables the CoderAgent to self-discover work by detecting
+        when a file imports a module that doesn't exist yet.
+
+        Returns:
+            Set of relative file paths that should be created.
+        """
+        missing = set()
+        repo_path_obj = Path(repo_path)
+
+        for change in self._changes:
+            file_path = repo_path_obj / change.file_path
+            if not file_path.exists() or file_path.suffix != ".py":
+                continue
+
+            try:
+                content = file_path.read_text()
+                tree = ast.parse(content)
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ImportFrom) and node.module:
+                        # e.g., "from task_manager.routes import task_router"
+                        # Convert to path: task_manager/routes.py
+                        module_parts = node.module.split(".")
+
+                        # Try as package/__init__.py first, then as module.py
+                        possible_paths = [
+                            "/".join(module_parts) + ".py",
+                            "/".join(module_parts) + "/__init__.py",
+                        ]
+
+                        module_exists = any(
+                            (repo_path_obj / p).exists() for p in possible_paths
+                        )
+
+                        if not module_exists:
+                            # Add as .py file (most common case)
+                            relative_path = "/".join(module_parts) + ".py"
+
+                            # Comprehensive exclusion list for stdlib and common packages
+                            # These should never be created as local modules
+                            STDLIB_AND_COMMON = (
+                                # Python stdlib
+                                "typing", "collections", "os", "sys", "json", "re",
+                                "logging", "datetime", "pathlib", "uuid", "abc",
+                                "asyncio", "functools", "itertools", "contextlib",
+                                "dataclasses", "enum", "io", "time", "copy",
+                                "subprocess", "shutil", "tempfile", "threading",
+                                "unittest", "http", "email", "html", "xml",
+                                "socket", "ssl", "hashlib", "secrets", "base64",
+                                # Common third-party
+                                "flask", "fastapi", "pydantic", "sqlalchemy",
+                                "pytest", "uvicorn", "httpx", "requests",
+                                "redis", "celery", "dramatiq", "structlog",
+                                "numpy", "pandas", "aiohttp", "starlette",
+                            )
+
+                            # Check first module component (e.g., "typing" from "typing.List")
+                            root_module = module_parts[0]
+                            if root_module not in STDLIB_AND_COMMON:
+                                missing.add(relative_path)
+                                logger.debug(
+                                    "missing_import_detected",
+                                    source=change.file_path,
+                                    missing_module=relative_path,
+                                )
+
+            except SyntaxError as e:
+                logger.warning("syntax_error_during_import_detection", file=str(file_path), error=str(e))
+            except Exception as e:
+                logger.warning("import_detection_failed", file=str(file_path), error=str(e))
+
+        return missing
 
     async def _gather_file_context(
         self,
@@ -549,7 +678,7 @@ For each file listed above:
         plan_context: dict,
     ) -> str:
         """Build the user prompt for the LLM."""
-        files_affected = step.get('files_affected', [])
+        files_affected = step.get("files_affected", [])
 
         # Build explicit file checklist
         if files_affected:
@@ -610,7 +739,9 @@ Write production-ready code that would pass a senior engineer's code review."""
         if isinstance(result, tuple) and len(result) == 2:
             _, tool_calls = result
         else:
-            logger.warning("unexpected_generate_with_tools_result", result_type=type(result).__name__)
+            logger.warning(
+                "unexpected_generate_with_tools_result", result_type=type(result).__name__
+            )
             return []
 
         # Ensure tool_calls is a list of dicts
@@ -628,13 +759,12 @@ Write production-ready code that would pass a senior engineer's code review."""
 
         return valid_calls
 
-
     def _sanitize_path_and_create_dirs(self, repo_root: str, dirty_path: str) -> Path:
         """
         Cleans LLM input, enforces security, and guarantees directory existence.
         """
         if not dirty_path:
-             raise ValueError("Empty path provided")
+            raise ValueError("Empty path provided")
 
         # 1. Clean the string
         clean_path_str = re.sub(r"^\[.*?\]\s*", "", dirty_path, flags=re.IGNORECASE)
@@ -648,11 +778,13 @@ Write production-ready code that would pass a senior engineer's code review."""
         # Note: resolved_path might fail if file doesn't exist, but it resolves parents.
         # Actually Path.resolve() resolves symlinks and absolute path.
         if not str(resolved_path).startswith(str(resolved_root)):
-             raise ValueError(f"Security Warning: Path '{clean_path_str}' attempts to write outside repo.")
+            raise ValueError(
+                f"Security Warning: Path '{clean_path_str}' attempts to write outside repo."
+            )
 
         # 3. CRITICAL: Recursive Directory Creation
         if not full_path.parent.exists():
-             full_path.parent.mkdir(parents=True, exist_ok=True)
+            full_path.parent.mkdir(parents=True, exist_ok=True)
 
         return full_path
 
@@ -671,7 +803,9 @@ Write production-ready code that would pass a senior engineer's code review."""
             # -----------------------------------------------------------------
             try:
                 # Returns Path object, verify usage below
-                path_obj = self._sanitize_path_and_create_dirs(repo_path, arguments.get('file_path', ''))
+                path_obj = self._sanitize_path_and_create_dirs(
+                    repo_path, arguments.get("file_path", "")
+                )
                 file_path = str(path_obj)
             except Exception as e:
                 logger.error("path_sanitization_failed", error=str(e))
@@ -700,7 +834,7 @@ Write production-ready code that would pass a senior engineer's code review."""
                 # Verify old_code exists
                 count = original_content.count(old_code)
                 if count > 0:
-                     # Simulate specific replacement (logic matched from manipulation.py)
+                    # Simulate specific replacement (logic matched from manipulation.py)
                     if occurrence == 0:
                         proposed_content = original_content.replace(old_code, new_code)
                     else:
@@ -715,9 +849,9 @@ Write production-ready code that would pass a senior engineer's code review."""
 
                         if found:
                             proposed_content = (
-                                original_content[:idx] +
-                                new_code +
-                                original_content[idx + len(old_code):]
+                                original_content[:idx]
+                                + new_code
+                                + original_content[idx + len(old_code) :]
                             )
                         else:
                             # Context mismatch - tool will fail, so let it proceed to fail
@@ -729,20 +863,21 @@ Write production-ready code that would pass a senior engineer's code review."""
 
                         if not lint_result.success:
                             # CRITICAL: Intercept and Block
-                            failure_msg = f"GravityLinter Blocked Write: {lint_result.error}"
-                            logger.error("linter_blocked_write", file=file_path, error=lint_result.error)
+                            _failure_msg = f"GravityLinter Blocked Write: {lint_result.error}"  # noqa: F841
+                            logger.error(
+                                "linter_blocked_write", file=file_path, error=lint_result.error
+                            )
 
                             # Synthesize a failed ToolCall
-                            from gravity_core.schema import ToolCall
                             #     tool_name=tool_name,
                             #     arguments=arguments,
                             #     success=False,
                             #     error=failure_msg,
                             #     duration_ms=0
                             # ))
-                            pass # ADVISORY MODE: Allow write despite failure
+                            pass  # ADVISORY MODE: Allow write despite failure
                             # return # FAIL FAST - Do not execute tool
-                            pass # ADVISORY MODE: Allow write despite failure
+                            pass  # ADVISORY MODE: Allow write despite failure
 
             # Execute the edit
             result = await self.call_tool(
@@ -780,7 +915,9 @@ Write production-ready code that would pass a senior engineer's code review."""
             # SYMBOLIC GUARDRAIL: Pre-computation & Validation
             # -----------------------------------------------------------------
             try:
-                path_obj = self._sanitize_path_and_create_dirs(repo_path, arguments.get('file_path', ''))
+                path_obj = self._sanitize_path_and_create_dirs(
+                    repo_path, arguments.get("file_path", "")
+                )
                 file_path = str(path_obj)
             except Exception as e:
                 logger.error("path_sanitization_failed", error=str(e))
@@ -834,20 +971,21 @@ Write production-ready code that would pass a senior engineer's code review."""
 
                     if not lint_result.success:
                         # CRITICAL: Intercept and Block
-                        failure_msg = f"GravityLinter Blocked Creation: {lint_result.error}"
-                        logger.error("linter_blocked_create", file=file_path, error=lint_result.error)
+                        _failure_msg = f"GravityLinter Blocked Creation: {lint_result.error}"  # noqa: F841
+                        logger.error(
+                            "linter_blocked_create", file=file_path, error=lint_result.error
+                        )
 
                         # Synthesize a failed ToolCall
-                        from gravity_core.schema import ToolCall
                         #     tool_name=tool_name,
                         #     arguments=arguments,
                         #     success=False,
                         #     error=failure_msg,
                         #     duration_ms=0
                         # ))
-                        pass # ADVISORY MODE: Allow write despite failure
+                        pass  # ADVISORY MODE: Allow write despite failure
                         # return # FAIL FAST
-                        pass # ADVISORY MODE: Allow write despite failure
+                        pass  # ADVISORY MODE: Allow write despite failure
                 except Exception as e:
                     # SAFETY NET: If linter crashes, LOG IT BUT DO NOT STOP WRITE
                     logger.exception("linter_crashed_internal_error", file=file_path, error=str(e))
@@ -936,15 +1074,18 @@ Write production-ready code that would pass a senior engineer's code review."""
         if not self._changes:
             return json.dumps({"changes": [], "message": "No changes required"})
 
-        return json.dumps({
-            "changes": [
-                {
-                    "file_path": c.file_path,
-                    "action": c.action,
-                    "explanation": c.explanation,
-                    "diff": c.diff[:500] if c.diff else "",  # Truncate long diffs
-                }
-                for c in self._changes
-            ],
-            "total_files": len(self._changes),
-        }, indent=2)
+        return json.dumps(
+            {
+                "changes": [
+                    {
+                        "file_path": c.file_path,
+                        "action": c.action,
+                        "explanation": c.explanation,
+                        "diff": c.diff[:500] if c.diff else "",  # Truncate long diffs
+                    }
+                    for c in self._changes
+                ],
+                "total_files": len(self._changes),
+            },
+            indent=2,
+        )

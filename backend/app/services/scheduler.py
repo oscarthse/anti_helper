@@ -4,10 +4,10 @@ Topological Scheduler Service.
 This module implements the "Dynamic Nervous System" logic.
 It replaces linear execution with a graph-based dependency solver.
 """
-from typing import List, Sequence
+
 from uuid import UUID
 
-from sqlalchemy import select, and_, func, or_
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,7 +22,7 @@ class SchedulerService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_next_executable_tasks(self, root_task_id: UUID) -> List[Task]:
+    async def get_next_executable_tasks(self, root_task_id: UUID) -> list[Task]:
         """
         Get all tasks that are ready to run.
 
@@ -33,10 +33,8 @@ class SchedulerService:
 
         This effectively performs a topological sort query on the fly.
         """
-        # 1. Alias for clarity
-        SubTask = Task
-
-        # 2. Logic:
+        # Logic for finding ready subtasks:
+        # We want Tasks where:
         # We want SubTasks where:
         # - parent_task_id == root_task_id
         # - status == PENDING
@@ -49,22 +47,27 @@ class SchedulerService:
 
         # Subquery: Find dependencies that are NOT completed
         # This returns the set of 'Edges' that serve as active blocks.
-        active_blockers_subquery = select(TaskDependency.blocked_task_id).join(
-            Task, TaskDependency.blocker_task_id == Task.id
-        ).where(
-            Task.status != TaskStatus.COMPLETED
-        ).scalar_subquery()
+        active_blockers_subquery = (
+            select(TaskDependency.blocked_task_id)
+            .join(Task, TaskDependency.blocker_task_id == Task.id)
+            .where(Task.status != TaskStatus.COMPLETED)
+            .scalar_subquery()
+        )
 
         # Main Query
-        stmt = select(Task).where(
-            and_(
-                Task.parent_task_id == root_task_id,
-                Task.status == TaskStatus.PENDING,
-                Task.id.not_in(active_blockers_subquery)
+        stmt = (
+            select(Task)
+            .where(
+                and_(
+                    Task.parent_task_id == root_task_id,
+                    Task.status == TaskStatus.PENDING,
+                    Task.id.not_in(active_blockers_subquery),
+                )
             )
-        ).options(
-            # Eager load dependencies to be safe/useful for the caller
-            selectinload(Task.knowledge_nodes)
+            .options(
+                # Eager load dependencies to be safe/useful for the caller
+                selectinload(Task.knowledge_nodes)
+            )
         )
 
         result = await self.session.execute(stmt)
@@ -72,23 +75,17 @@ class SchedulerService:
 
         return list(executable_tasks)
 
-    async def get_task_bottlenecks(self, root_task_id: UUID) -> List[tuple[str, int]]:
+    async def get_task_bottlenecks(self, root_task_id: UUID) -> list[tuple[str, int]]:
         """
         Diagnostic: Identify which tasks are blocking the most downstream work.
         Returns [(TaskTitle, NumberOfBlockedTasks), ...]
         """
-        stmt = select(
-            Task.title,
-            func.count(TaskDependency.blocked_task_id).label("blocked_count")
-        ).join(
-            TaskDependency, Task.id == TaskDependency.blocker_task_id
-        ).where(
-            Task.parent_task_id == root_task_id,
-            Task.status != TaskStatus.COMPLETED
-        ).group_by(
-            Task.title
-        ).order_by(
-            func.count(TaskDependency.blocked_task_id).desc()
+        stmt = (
+            select(Task.title, func.count(TaskDependency.blocked_task_id).label("blocked_count"))
+            .join(TaskDependency, Task.id == TaskDependency.blocker_task_id)
+            .where(Task.parent_task_id == root_task_id, Task.status != TaskStatus.COMPLETED)
+            .group_by(Task.title)
+            .order_by(func.count(TaskDependency.blocked_task_id).desc())
         )
 
         result = await self.session.execute(stmt)

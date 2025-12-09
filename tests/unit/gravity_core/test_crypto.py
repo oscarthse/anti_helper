@@ -20,6 +20,7 @@ class TestCryptoRoundTrip:
     def setup_test_key(self):
         """Set up a test encryption key for all tests."""
         from cryptography.fernet import Fernet
+
         test_key = Fernet.generate_key().decode()
 
         with patch.dict(os.environ, {"ANTIGRAVITY_ENCRYPTION_KEY": test_key}):
@@ -61,6 +62,7 @@ class TestCryptoRoundTrip:
         new_key = Fernet.generate_key().decode()
         with patch.dict(os.environ, {"ANTIGRAVITY_ENCRYPTION_KEY": new_key}):
             from gravity_core.utils.crypto import decrypt_secret
+
             with pytest.raises(DecryptionError):
                 decrypt_secret(encrypted)
 

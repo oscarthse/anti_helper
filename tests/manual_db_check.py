@@ -1,4 +1,3 @@
-
 import asyncio
 import os
 import sys
@@ -6,9 +5,11 @@ import sys
 # Add project root to path
 sys.path.append(os.getcwd())
 
-from backend.app.db.session import init_db, get_session
 from sqlalchemy import select
+
 from backend.app.db.models import Task
+from backend.app.db.session import get_session, init_db
+
 
 async def check():
     print("Initializing DB...")
@@ -28,6 +29,7 @@ async def check():
         except Exception as e:
             print(f"Query Failed: {e}")
         break
+
 
 if __name__ == "__main__":
     asyncio.run(check())
