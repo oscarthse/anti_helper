@@ -14,12 +14,12 @@
 | **THE BODY** (FastAPI) | State Manager & Dispatcher | FastAPI, SQLAlchemy Async, Dramatiq, Redis, Alembic |
 | **THE FACE** (Frontend) | Visual Renderer | **Vite + React 18**, TanStack Query v5, Tailwind, Shadcn UI, Framer Motion |
 
-**Recent Critical Updates (Dec 2025):**
-- 🎨 **UI Overhaul (Dec 8):** Complete frontend migration from Next.js to Vite + React 18 with real-time SSE streaming
-- 🔄 **Real-Time Sync:** Fixed progress tracking, activity stream, and file tree with TanStack Query v5 polling + SSE
-- 📝 **README Mandate:** Agent prompts now enforce project-specific README content (no generic templates)
-- 🛡️ **Protocol "Verified Reality":** "Sledgehammer" verification logic guarantees files are physically written to disk
-- 🧠 **Quality Thresholds:** Coder agents enforce minimum code volume and prohibit placeholder implementations
+**Recent Updates (Dec 2025):**
+- 🧠 **Mnemosyne Memory (Dec 9):** Long-term episodic memory with pgvector hybrid search (vector + symbolic anchors)
+- 🔄 **CoderAgent Fixes (Dec 9):** Import detection for multi-file generation, stdlib exclusion list, Planner architecture enforcement
+- 🎨 **UI Overhaul (Dec 8):** Frontend migration from Next.js to Vite + React 18 with SSE streaming
+- 📝 **README Mandate:** Agent prompts enforce project-specific README content
+- 🛡️ **Protocol "Verified Reality":** Verification logic guarantees files are physically written to disk
 
 ## 🤖 Agent Personas
 
@@ -73,12 +73,12 @@ antigravity-dev/
 │   ├── tests/                  # Jest + RTL tests (45 passing)
 │   └── tailwind.config.ts      # Zinc Theme Configuration
 │
-├── tests/                      # Python test suite (51+ passing)
+├── tests/                      # Python test suite (236+ passing)
 │   ├── unit/gravity_core/      # Agent + utility tests
 │   └── unit/backend/           # Worker tests
 │
 ├── alembic.ini                 # Alembic configuration
-├── docker-compose.yml          # Infrastructure
+├── docker-compose.yml          # Infrastructure (uses pgvector/pgvector:pg16)
 └── Dockerfile.sandbox          # Isolated execution env
 ```
 
@@ -210,9 +210,9 @@ ruff check . && ruff format .
 
 | Suite | Tests | Status |
 |-------|-------|--------|
-| Python (total) | 51+ | ✅ All passing |
+| Python (total) | 236+ | ✅ All passing |
 | Frontend | 45 | ✅ All passing |
-| **Combined** | **96+** | ✅ 100% pass rate |
+| **Combined** | **280+** | ✅ 100% pass rate |
 
 ## 📝 Configuration
 

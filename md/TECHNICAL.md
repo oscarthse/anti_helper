@@ -94,17 +94,52 @@ Instead of relying on LLM self-reporting ("I have done X"), we render the UI dir
 ## 🔧 Advanced Tech Stack
 
 *   **Orchestration:** `Dramatiq` (Actor Model for distributed processing).
-*   **Database:** `PostgreSQL` + `SQLAlchemy` (ACID compliance for State Persistence).
+*   **Database:** `PostgreSQL` + `pgvector` + `SQLAlchemy` (ACID compliance + vector search).
 *   **State Machine:** Custom Event-Driven Architecture.
 *   **Analysis:** `AST` (Abstract Syntax Tree) parsing for symbolic code validation.
+*   **Embeddings:** OpenAI `text-embedding-3-small` (1536 dims).
+
+---
+
+## 🧠 Mnemosyne Memory System (Phase 4)
+
+The agent system now includes long-term episodic memory via the **Mnemosyne Protocol**.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│           MemoryManager                         │
+├─────────────────────────────────────────────────┤
+│  save_experience(task, plan, outcome)           │
+│    1. Summarize via gpt-4o-mini                 │
+│    2. Embed via text-embedding-3-small          │
+│    3. Store in memories table                   │
+│    4. Create symbolic anchors (file paths)      │
+├─────────────────────────────────────────────────┤
+│  recall_context(task_desc, focus_files)         │
+│    → Hybrid search (vector + anchors)           │
+│    → Returns formatted context for prompts      │
+└─────────────────────────────────────────────────┘
+```
+
+### Hybrid Search Query (Effective Rank)
+
+The retrieval combines:
+- **Vector similarity** (cosine distance via pgvector HNSW index)
+- **Anchor matching** (+0.3 bonus per matching file path)
+- **Confidence weighting** (success memories rank higher)
+
+$$\text{score} = (1 - \text{cosine\_distance}) \times \text{confidence} + 0.3 \times |\text{anchor\_matches}|$$
 
 ---
 
 ## 🔮 Future / Roadmap
 
-*   **RAG (Retrieval Augmented Generation):** Vector-based semantic search to inject code context $K$ without polluting $\Omega_t$.
-*   **Active Learning:** Updating the policy $\pi$ of agents based on past failure rates of $\delta$.
-*   **Neuro-Symbolic Compilation:** compiling natural language plans directly into executable DAGs.
+*   ~~**RAG (Retrieval Augmented Generation):**~~ ✅ Implemented via Mnemosyne.
+*   **Sleep Cycle:** Dramatiq background task for memory consolidation/clustering.
+*   **Active Learning:** Updating agent policies based on past failure rates.
+*   **Neuro-Symbolic Compilation:** Compiling natural language plans directly into executable DAGs.
 
 ---
 

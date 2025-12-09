@@ -4,9 +4,9 @@
 
 **Goal:** A multi-agent, sandboxed AI development platform that plans, edits, and tests changes across complex applications as a disciplined engineering team.
 
-**Current Phase:** Phase 5: Infrastructure & Frontend (The Face)
+**Current Phase:** Phase 4: Mnemosyne Memory System (Long-Term Memory)
 
-**Last Updated:** 2025-12-07T21:20:00+01:00
+**Last Updated:** 2025-12-09T02:35:00+01:00
 
 **Architecture:** Brain-Body-Face
 
@@ -108,8 +108,10 @@
 | `test_crypto.py` | 9 | ✅ |
 | `test_worker.py` | 7 | ✅ |
 | `test_llm_client.py` | 12 | ✅ |
+| `test_json_cleaning.py` | 8 | ✅ |
+| Integration tests | 50+ | ✅ |
 | Frontend (Jest) | 45 | ✅ |
-| **Total** | **96+** | ✅ 100% pass rate |
+| **Total** | **280+** | ✅ 100% pass rate |
 
 ---
 
@@ -293,3 +295,39 @@ frontend/src/
 - `frontend/src/components/anti-helper/FileTree.jsx` - API-based tree
 - `libs/gravity_core/agents/coder.py` - README requirements in CODER_INFRA
 - `libs/gravity_core/agents/planner.py` - README mandate in plan generation
+
+### 2025-12-09
+
+**🧠 Phase 4: Mnemosyne Memory System (Core)**
+
+Implemented long-term episodic memory for agents using PostgreSQL with pgvector.
+
+| Component | File | Description |
+|-----------|------|-------------|
+| **Migration** | `backend/alembic/versions/a1b2c3d4e5f6_add_mnemosyne_memory_tables.py` | Creates `memories`, `memory_anchors` tables with HNSW index |
+| **ORM Models** | `backend/app/db/models.py` | Added `Memory`, `MemoryAnchor` with pgvector Vector type |
+| **Embeddings** | `libs/gravity_core/llm/client.py` | Added `embed_text()` method using `text-embedding-3-small` |
+| **MemoryManager** | `backend/app/services/memory_manager.py` | `save_experience()` and `recall_context()` with hybrid search |
+| **Reasoner** | `backend/app/services/reasoner/core.py` | Wraps agents with memory-augmented prompts |
+
+**Hybrid Search Query:**
+```
+score = (1 - cosine_distance) × confidence + 0.3 × anchor_matches
+```
+
+**🔧 CoderAgent Pipeline Improvements**
+
+| Fix | Location | Description |
+|-----|----------|-------------|
+| `_detect_missing_imports` | `coder.py` | AST-based import detection for multi-file generation |
+| Stdlib exclusions | `coder.py` | Added `unittest`, `http`, `socket`, etc. to prevent false positives |
+| Architecture enforcement | `planner.py` | Added "Entry Point" + "Layered Architecture" requirements |
+| `search_codebase` resilience | `perception.py` | Handles unexpected LLM arguments via `**kwargs` |
+
+**📊 Test Suite Status**
+- 236 passed, 1 skipped, 75 warnings
+- All F401/F821/F841 lint errors resolved
+
+**🐳 Infrastructure**
+- Updated `docker-compose.yml` to use `pgvector/pgvector:pg16` for vector extension support
+- Removed obsolete `version: "3.9"` attribute

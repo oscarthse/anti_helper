@@ -417,3 +417,131 @@ class RepositorySecret(Base):
 
     def __repr__(self) -> str:
         return f"<RepositorySecret {self.key_name} for repo {self.repo_id}>"
+
+
+# =============================================================================
+# Mnemosyne Memory System (Phase 4)
+# =============================================================================
+
+# Conditional import for pgvector - graceful degradation if not installed
+try:
+    from pgvector.sqlalchemy import Vector
+    PGVECTOR_AVAILABLE = True
+except ImportError:
+    Vector = None  # type: ignore
+    PGVECTOR_AVAILABLE = False
+
+
+class Memory(Base):
+    """
+    Episodic Memory: Long-term storage for agent experiences.
+
+    Each memory represents a completed task with:
+    - Semantic content (the raw experience)
+    - Summary (LLM-generated causal understanding)
+    - Embedding (vector for similarity search)
+    - Anchors (symbolic links to code artifacts)
+
+    Used by MemoryManager for hybrid retrieval (vector + symbolic).
+    """
+
+    __tablename__ = "memories"
+
+    id: Mapped[UUID] = mapped_column(
+        Uuid,
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Content
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Vector embedding (1536 dims for text-embedding-3-small)
+    # Note: Actual column type is set in migration as vector(1536)
+    # This is a placeholder for the ORM - pgvector handles the actual type
+    if PGVECTOR_AVAILABLE:
+        embedding = mapped_column(Vector(1536), nullable=True)
+    else:
+        # Fallback for environments without pgvector
+        embedding: Mapped[bytes | None] = mapped_column(nullable=True)
+
+    # Classification
+    memory_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="task_outcome",
+    )
+
+    # Confidence score (0.0-1.0) - affects retrieval ranking
+    confidence: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=1.0,
+    )
+
+    # Link to original task (optional - for traceability)
+    task_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("tasks.id"),
+        nullable=True,
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    # Relationships
+    anchors: Mapped[list["MemoryAnchor"]] = relationship(
+        "MemoryAnchor",
+        back_populates="memory",
+        cascade="all, delete-orphan",
+    )
+    task: Mapped["Task | None"] = relationship(
+        "Task",
+        backref="memories",
+    )
+
+
+class MemoryAnchor(Base):
+    """
+    Symbolic anchors linking memories to code artifacts.
+
+    These enable graph-based retrieval: when working on file X,
+    retrieve memories that previously touched file X.
+    """
+
+    __tablename__ = "memory_anchors"
+
+    id: Mapped[UUID] = mapped_column(
+        Uuid,
+        primary_key=True,
+        default=uuid4,
+    )
+
+    # Parent memory
+    memory_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("memories.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    # Anchor target
+    file_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    symbol_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    # Relationships
+    memory: Mapped["Memory"] = relationship(
+        "Memory",
+        back_populates="anchors",
+    )

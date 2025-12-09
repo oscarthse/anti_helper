@@ -75,7 +75,8 @@ services:
   # PostgreSQL - Single Source of Truth
   # ============================================
   postgres:
-    image: postgres:16-alpine
+    # Using pgvector image for vector extension support (Mnemosyne memory system)
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: gravity
       POSTGRES_PASSWORD: gravity

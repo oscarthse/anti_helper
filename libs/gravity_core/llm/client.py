@@ -226,6 +226,59 @@ class LLMClient:
         return None
 
     # =========================================================================
+    # Embedding Method (Mnemosyne Memory Support)
+    # =========================================================================
+
+    async def embed_text(
+        self,
+        text: str,
+        model: str = "text-embedding-3-small",
+    ) -> list[float]:
+        """
+        Generate embedding vector for text using OpenAI's embedding models.
+
+        Used by MemoryManager for semantic search and retrieval.
+
+        Args:
+            text: The text to embed (will be truncated if too long)
+            model: Embedding model to use (default: text-embedding-3-small, 1536 dims)
+
+        Returns:
+            List of floats representing the embedding vector
+
+        Raises:
+            LLMProviderError: If OpenAI client is not available or API fails
+        """
+        if not self._openai_client:
+            raise LLMProviderError(
+                message="OpenAI client not available for embeddings",
+                provider="openai",
+                retryable=False,
+            )
+
+        # Truncate to ~8000 chars to stay within token limits (rough estimate)
+        max_chars = 8000
+        if len(text) > max_chars:
+            text = text[:max_chars]
+            logger.debug("embedding_text_truncated", original_length=len(text))
+
+        try:
+            response = await self._openai_client.embeddings.create(
+                input=text,
+                model=model,
+            )
+            embedding = response.data[0].embedding
+            logger.debug("embedding_generated", model=model, dimensions=len(embedding))
+            return embedding
+        except Exception as e:
+            logger.error("embedding_failed", model=model, error=str(e))
+            raise LLMProviderError(
+                message=f"Embedding generation failed: {e}",
+                provider="openai",
+                retryable=True,
+            )
+
+    # =========================================================================
     # Main Generation Method
     # =========================================================================
 
